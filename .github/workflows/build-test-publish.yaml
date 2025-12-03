@@ -22,7 +22,7 @@ jobs:
   check-version-txt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Tag with the release version
@@ -32,11 +32,11 @@ jobs:
   lint-format-and-static-code-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Install pre-commit
         run: |
           pip install pre-commit
@@ -47,11 +47,11 @@ jobs:
   build-wheel-and-sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Install build CLI
         run: |
           pip install build
@@ -59,7 +59,7 @@ jobs:
         run: |
           /bin/bash -x run.sh build
       - name: Upload wheel and sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheel-and-sdist
           path: ./dist/*
@@ -69,13 +69,13 @@ jobs:
       - build-wheel-and-sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Download wheel and sdist
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: wheel-and-sdist
           path: ./dist/
@@ -96,24 +96,36 @@ jobs:
     # if - this is a merge to main or push directly to the main branch
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Download wheel and sdist
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: wheel-and-sdist
           path: ./dist/
-      # - name: Deploy
-      #   if: ${{ github.event.inputs.deploy == 'true' }}
+      - name: install twine
+        run: |
+            pip install twine
+      - name: Publish package to Test
+        run: |
+            /bin/bash -x run.sh publish:test
+        env:
+          TEST_PYPI_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
+      - name: Publish package to Prod
+        run: |
+          /bin/bash -x run.sh publish:prod
+        env:
+          PROD_PYPI_TOKEN: ${{ secrets.PROD_PYPI_TOKEN }}
       #   run: |
       #     # ...
       - name: Push tags
         run: |
           git tag $(cat version.txt)
           git push origin --tags
+
 
   # Print variables that are available to the workflow. This is useful for debugging and troubleshooting.
   # docs: https://docs.github.com/en/actions/learn-github-actions/contexts#example-printing-context-information-to-the-log
