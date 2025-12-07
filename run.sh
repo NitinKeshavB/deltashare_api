@@ -20,6 +20,10 @@ function install {
     python -m pip install --editable "$THIS_DIR/[dev]"
 }
 
+function run {
+    uvicorn src.dbrx_api.main:APP --reload
+}
+
 # run linting, formatting, and other static code quality tools
 function lint {
     SKIP=no-commit-to-branch pre-commit run --all-files

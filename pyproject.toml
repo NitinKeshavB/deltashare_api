@@ -9,7 +9,7 @@ authors = [{ name = "Nitin Keshav", email = "nitinkeshav.bolla@jll.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = []
+dependencies = ["fastapi", "pydantic", "pydantic_settings","dotenv", "typing-extensions"]
 classifiers = ["Programming Language :: Python :: 3"]
 keywords = ["one", "two"]
 
@@ -23,6 +23,7 @@ version = { file = "version.txt" }
 # optional dependencies can be installed with square brackets, e.g. `pip install my-package[test,static-code-qa]`
 [project.optional-dependencies]
 dbrx= ["databricks-sdk"]
+api = ["uvicorn"]
 azure = ["azure-storage-blob","azure-identity"]
 test = ["pytest", "pytest-cov"]
 release = ["build", "twine"]
@@ -41,7 +42,7 @@ static-code-qa = [
 # - automatically apply formatting
 # - show enhanced autocompletion for stubs libraries
 # See .vscode/settings.json to see how VS Code is configured to use these tools
-dev = ["deltashare_api[test,release,static-code-qa]"]
+dev = ["deltashare_api[dbrx,api,test,release,static-code-qa]"]
 
 [build-system]
 # Minimum requirements for the build system to execute.
