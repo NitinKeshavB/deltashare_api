@@ -306,12 +306,6 @@ def rotate_recipient_token(recipient_name: str, expire_in_seconds: int = 0):
             existing_token_expire_in_seconds=expire_in_seconds,
         )
 
-        print(f"✓ Successfully rotated token for recipient: {recipient_name}")
-        if expire_in_seconds > 0:
-            print(f"  Old token expires in: {expire_in_seconds} seconds")
-        else:
-            print("  Old token expired immediately")
-
         return response
 
     except Exception as ex:
@@ -481,26 +475,11 @@ def revoke_recipient_ip(recipient_name: str, ip_access_list: List[str]):
         # Update recipient IP access list
         response = w_client.recipients.update(name=recipient_name, ip_access_list=ip_access)
 
-        print(f"✓ Successfully updated IP access list for: {recipient_name}")
-        print(f"  Remaining IPs: {len(remaining_ips)}")
-
         return response
 
-    except CustomError as e:
-        print(f"✗ Authentication error: {e}")
-        return None
-    except ValueError as e:
-        print(f"✗ Invalid parameter value: {e}")
-        return None
     except Exception as ex:
-        error_msg = str(ex)
-        if "not found" in error_msg.lower():
-            print(f"✗ Recipient '{recipient_name}' not found")
-        elif "databricks" in error_msg.lower() or "token" in error_msg.lower():
-            print("✗ Cannot update IP list for DATABRICKS type recipient")
-            print("  IP access lists only work with TOKEN authentication")
-        else:
-            print(f"✗ Unexpected error removing IP addresses: {ex}")
+        str(ex)
+        print(f"✗ Unexpected error removing IP addresses: {ex}")
         return None
 
 
@@ -716,7 +695,7 @@ def main():
         Unexpected errors
 
     """
-    response = list_recipients(prefix="pam", max_results=2)
+    response = rotate_recipient_token(recipient_name="testing_pam")
     print(type(response))
 
     # iterate recipients
