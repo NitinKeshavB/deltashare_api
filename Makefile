@@ -7,6 +7,9 @@
 build:
 	bash run.sh build
 
+run-dev:
+	bash run.sh run
+
 clean:
 	bash run.sh clean
 

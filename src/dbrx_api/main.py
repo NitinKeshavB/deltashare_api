@@ -1,553 +1,70 @@
-"""FastAPI application for Databricks Delta Sharing recipients."""
+from textwrap import dedent
 
-import ipaddress
-from datetime import datetime
-from typing import (
-    List,
-    Optional,
+import pydantic
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+
+from dbrx_api.errors import (
+    handle_broad_exceptions,
+    handle_pydantic_validation_errors,
 )
-
-from databricks.sdk.service.sharing import (
-    AuthenticationType,
-    RecipientInfo,
-)
-from fastapi import (
-    Depends,
-    FastAPI,
-    HTTPException,
-    Response,
-    status,
-)
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-
-from dbrx_api.recipient import add_recipient_ip
-from dbrx_api.recipient import create_recipient_d2d as create_recipient_for_d2d
-from dbrx_api.recipient import create_recipient_d2o as create_recipient_for_d2o
-from dbrx_api.recipient import delete_recipient
-from dbrx_api.recipient import get_recipients as get_recipient_by_name
-from dbrx_api.recipient import (
-    list_recipients,
-    revoke_recipient_ip,
-    rotate_recipient_token,
-    update_recipient_description,
-    update_recipient_expiration_time,
-)
-
-#####################
-# --- Constants --- #
-#####################
-
-APP = FastAPI()
-
-####################################
-# --- Request/response schemas --- #
-####################################
+from dbrx_api.routes_recipient import ROUTER_RECIPIENT
+from dbrx_api.routes_share import ROUTER_SHARE
+from dbrx_api.settings import Settings
 
 
-# read (cRud)
-class RecipientMetadata(BaseModel):
-    """Metadata for a recipient."""
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Create a FastAPI application."""
+    settings = settings or Settings()
 
-    name: str
-    auth_type: str
-    created_at: datetime
-
-
-# read (cRud)
-class GetRecipientsResponse(BaseModel):
-    """Response model for listing recipients."""
-
-    Message: str
-    Recipient: List[RecipientInfo]
+    app = FastAPI(
+        title="Delta Share API",
+        summary="API for managing Delta Share recipients and shares.",
+        version="v1",
+        description=dedent(
+            """
+        ![Maintained by](https://img.shields.io/badge/Maintained_by-EDP%20Delta%20share_Team-green?style=for-the-badge)
 
 
-# read (cRud)
-class GetRecipientsQueryParams(BaseModel):
-    """Query parameters for listing recipients."""
-
-    prefix: Optional[str] = None
-    page_size: Optional[int] = 100
-
-    def __init__(self, **data):
-        """Initialize and validate query parameters."""
-        super().__init__(**data)
-        if self.page_size is not None and self.page_size <= 0:
-            raise ValueError("page_size must be greater than 0")
-
-
-# delete (cruD)
-class DeleteRecipientResponse(BaseModel):
-    """Response model for deleting a recipient."""
-
-    message: str
-    status_code: int
-
-
-# create/update (CrUd)
-class PutFileResponse(BaseModel):
-    """Response model for file operations."""
-
-    file_path: str
-    message: str
-
-
-##########################
-
-
-@APP.get(
-    "/recipients/{recipient_name}",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"detail": "Recipient not found"}}},
-        },
-    },
-)
-async def get_recipients(recipient_name: str) -> RecipientInfo:
-    """Get a specific recipient by name."""
-    recipient = get_recipient_by_name(recipient_name)
-
-    if recipient is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
-        )
-    return recipient
-
-
-@APP.get(
-    "/recipients",
-    responses={
-        status.HTTP_200_OK: {
-            "description": "Recipients fetched successfully",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "Message": "Fetched 5 recipients!",
-                        "Recipient": [],
-                    }
-                }
-            },
-        },
-        status.HTTP_204_NO_CONTENT: {
-            "description": "No recipients found for search criteria",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "Message": "No recipients found for search criteria.",
-                        "Recipient": [],
-                    }
-                }
-            },
-        },
-    },
-)
-async def list_recipients_all(
-    query_params: GetRecipientsQueryParams = Depends(),
-):
-    """List all recipients or with optional prefix filtering."""
-    recipients = list_recipients(
-        prefix=query_params.prefix,
-        max_results=query_params.page_size,
+        | Helpful Links | Notes |
+        | --- | --- |
+        | [Delta Share Confluence ](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20491567149/Enterprise+Delta+Share+Application) |`update-in-progress` |
+        | [Delta Share Dev Team](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587905070/Delta+Share+team) |`update-in-progress` |
+        | [Delta Share CDR Sign off](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/jlltknowledgebase/pages/20324713069/External+Delta+Sharing+Framework+-+Architectural+Design+High+Level) | `signed-off` |
+        | [Delta Share Project Repo](https://github.com/JLLT-Apps/JLLT-EDP-DeltaShare) | `Databricks-API-Web repo` |
+        | [Delta Share status codes](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/edit-v2/20587249733?draftShareId=a715edeb-f8fc-4c02-90c4-a40ffdff3ecd) | `update-in-progress` |
+        | [API Status](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587970637/API+Dev+Status) | <img alt="Static Badge" src="https://img.shields.io/badge/Recipient_Done-Green?style=for-the-badge&logoColor=green"> <img alt="Static Badge" src="https://img.shields.io/badge/share_in--progress-blue?style=for-the-badge&color=blue"> |
+        """
+        ),
+        docs_url="/",  # its easier to find the docs when they live on the base url
+        generate_unique_id_function=custom_generate_unique_id,
     )
+    app.state.settings = settings
 
-    if len(recipients) == 0:
-        return JSONResponse(
-            status_code=status.HTTP_204_NO_CONTENT,
-            content={
-                "Message": "No recipients found for search criteria.",
-                "Recipient": [],
-            },
-        )
-
-    message = f"Fetched {len(recipients)} recipients!"
-    return GetRecipientsResponse(Message=message, Recipient=recipients)
-
-
-##########################
-
-
-@APP.delete(
-    "/recipients/{recipient_name}",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"detail": "Recipient not found"}}},
-        },
-    },
-)
-async def delete_recipient_by_name(recipient_name: str) -> JSONResponse:
-    """Delete a Recipient."""
-    recipient = get_recipient_by_name(recipient_name)
-    if recipient:
-        delete_recipient(recipient_name)
-        return JSONResponse(
-            status_code=status.HTTP_204_NO_CONTENT,
-            content={"message": "Deleted Recipient successfully!"},
-        )
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Recipient not found: {recipient_name}",
+    app.include_router(ROUTER_RECIPIENT)
+    app.include_router(ROUTER_SHARE)
+    app.add_exception_handler(
+        exc_class_or_status_code=pydantic.ValidationError,
+        handler=handle_pydantic_validation_errors,
     )
+    app.middleware("http")(handle_broad_exceptions)
+
+    return app
 
 
-@APP.post(
-    "/Recipients/d2d/{recipient_name}",
-    responses={
-        status.HTTP_201_CREATED: {
-            "description": "Recipients created successfully",
-            "content": {"application/json": {"example": {"Message": "Recipient created successfully!"}}},
-        },
-        status.HTTP_409_CONFLICT: {
-            "description": "Recipient already exists",
-            "content": {"application/json": {"example": {"Message": "Recipient already exists"}}},
-        },
-    },
-)
-async def create_recipient_databricks_to_databricks(
-    recipient_name: str,
-    recipient_identifier: str,
-    description: str,
-    sharing_code: Optional[str] = None,
-    response: Response = None,
-) -> RecipientInfo:
-    """Create a recipient for Databricks to Databricks sharing."""
-    recipient = get_recipient_by_name(recipient_name)
+def custom_generate_unique_id(route: APIRoute):
+    """
+    Generate prettier `operationId`s in the OpenAPI schema.
 
-    if recipient:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Recipient already exists: {recipient_name}",
-        )
-
-    recipient = create_recipient_for_d2d(
-        recipient_name=recipient_name,
-        recipient_identifier=recipient_identifier,
-        description=description,
-        sharing_code=sharing_code,
-    )
-
-    if response:
-        response.status_code = status.HTTP_201_CREATED
-    return recipient
-
-
-@APP.post(
-    "/Recipients/d2o/{recipient_name}",
-    responses={
-        status.HTTP_201_CREATED: {
-            "description": "Recipients created successfully",
-            "content": {"application/json": {"example": {"Message": "Recipient created successfully!"}}},
-        },
-        status.HTTP_409_CONFLICT: {
-            "description": "Recipient already exists",
-            "content": {"application/json": {"example": {"Message": "Recipient already exists"}}},
-        },
-    },
-)
-async def create_recipient_databricks_to_opensharing(
-    recipient_name: str,
-    description: str,
-    ip_access_list: Optional[List[str]] = None,
-    response: Response = None,
-) -> RecipientInfo:
-    """Create a recipient for Databricks to Databricks sharing."""
-    recipient = get_recipient_by_name(recipient_name)
-
-    if recipient:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Recipient already exists: {recipient_name}",
-        )
-
-    recipient = create_recipient_for_d2o(
-        recipient_name=recipient_name,
-        description=description,
-        ip_access_list=ip_access_list,
-    )
-
-    if response:
-        response.status_code = status.HTTP_201_CREATED
-    return recipient
-
-
-@APP.put(
-    "/recipients/{recipient_name}/tokens/rotate",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"Message": "Recipient not found"}}},
-        },
-    },
-)
-async def rotate_recipient_tokens(
-    recipient_name: str,
-    expire_in_seconds: int = 0,
-    response: Response = None,
-):
-    """Rotate a recipient token for Databricks to opensharing protocol."""
-
-    if expire_in_seconds < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="expire_in_seconds must be a non-negative integer",
-        )
-
-    recipient = get_recipient_by_name(recipient_name)
-
-    if not recipient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
-        )
-
-    recipient = rotate_recipient_token(
-        recipient_name=recipient_name,
-        expire_in_seconds=expire_in_seconds,
-    )
-
-    if response:
-        response.status_code = status.HTTP_200_OK
-    return recipient
-
-
-@APP.put(
-    "/recipients/{recipient_name}/ipaddress/add",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"Message": "Recipient not found"}}},
-        },
-    },
-)
-async def add_client_ip_to_databricks_opensharing(
-    recipient_name: str,
-    ip_access_list: List[str],
-    response: Response = None,
-):
-    """Add IP to access list for Databricks to opensharing protocol."""
-    if not ip_access_list or len(ip_access_list) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="IP access list cannot be empty",
-        )
-
-    # Validate each IP address or CIDR block
-    invalid_ips = []
-    for ip_str in ip_access_list:
-        try:
-            # Try parsing as network (supports both single IPs and CIDR)
-            ipaddress.ip_network(ip_str.strip(), strict=False)
-        except ValueError:
-            invalid_ips.append(ip_str)
-
-    if invalid_ips:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"Invalid IP addresses or CIDR blocks: " f"{', '.join(invalid_ips)}"),
-        )
-
-    recipient = get_recipient_by_name(recipient_name)
-
-    if recipient.authentication_type == AuthenticationType.DATABRICKS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot revoke IP addresses for DATABRICKS to DATABRICKS type recipient. IP access lists only work with TOKEN authentication.",
-        )
-
-    if not recipient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
-        )
-
-    recipient = add_recipient_ip(recipient_name, ip_access_list)
-
-    if response:
-        response.status_code = status.HTTP_200_OK
-    return recipient
-
-
-@APP.put(
-    "/recipients/{recipient_name}/ipaddress/revoke",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"Message": "Recipient not found"}}},
-        },
-        status.HTTP_404_NOT_FOUND: {
-            "description": "The following IP addresses are not present in the recipient's IP access list and cannot be revoked",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "Message": "The following IP addresses are not present in the recipient's IP access list and cannot be revoked"
-                    }
-                }
-            },
-        },
-        status.HTTP_400_BAD_REQUEST: {
-            "description": "IP access list cannot be empty",
-            "content": {"application/json": {"example": {"Message": "IP access list cannot be empty"}}},
-        },
-    },
-)
-async def revoke_client_ip_from_databricks_opensharing(
-    recipient_name: str,
-    ip_access_list: List[str],
-    response: Response = None,
-):
-    """revoke IP to access list for Databricks to opensharing protocol."""
-    if not ip_access_list or len(ip_access_list) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="IP access list cannot be empty",
-        )
-
-    # Validate each IP address or CIDR block
-    invalid_ips = []
-    for ip_str in ip_access_list:
-        try:
-            # Try parsing as network (supports both single IPs and CIDR)
-            ipaddress.ip_network(ip_str.strip(), strict=False)
-        except ValueError:
-            invalid_ips.append(ip_str)
-
-    if invalid_ips:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"Invalid IP addresses or CIDR blocks: " f"{', '.join(invalid_ips)}"),
-        )
-
-    recipient = get_recipient_by_name(recipient_name)
-
-    if not recipient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
-        )
-
-    if recipient.authentication_type == AuthenticationType.DATABRICKS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot revoke IP addresses for DATABRICKS to DATABRICKS type recipient. IP access lists only work with TOKEN authentication.",
-        )
-
-    # Check which IPs are not present in the recipient's current IP list
-    current_ips = []
-    if recipient.ip_access_list and recipient.ip_access_list.allowed_ip_addresses:
-        current_ips = recipient.ip_access_list.allowed_ip_addresses
-
-    ips_not_present = [ip for ip in ip_access_list if ip.strip() not in current_ips]
-
-    if ips_not_present:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                f"The following IP addresses are not present in the recipient's "
-                f"IP access list and cannot be revoked: {', '.join(ips_not_present)}"
-            ),
-        )
-
-    recipient = revoke_recipient_ip(recipient_name, ip_access_list)
-
-    if response:
-        response.status_code = status.HTTP_200_OK
-    return recipient
-
-
-@APP.put(
-    "/recipients/{recipient_name}/description/update",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"Message": "Recipient not found"}}},
-        },
-        status.HTTP_400_BAD_REQUEST: {
-            "description": "Description cannot be empty",
-            "content": {"application/json": {"example": {"Message": "Description cannot be empty"}}},
-        },
-    },
-)
-async def update_recipients_description(
-    recipient_name: str,
-    description: str,
-    response: Response = None,
-):
-    """Rotate a recipient token for Databricks to opensharing protocol."""
-
-    if not description:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Description cannot be empty",
-        )
-
-    recipient = get_recipient_by_name(recipient_name)
-
-    if not recipient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
-        )
-
-    recipient = update_recipient_description(
-        recipient_name=recipient_name,
-        description=description,
-    )
-
-    if response:
-        response.status_code = status.HTTP_200_OK
-    return recipient
-
-
-@APP.put(
-    "/recipients/{recipient_name}/expiration_time/update",
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"Message": "Recipient not found"}}},
-        },
-        status.HTTP_400_BAD_REQUEST: {
-            "description": "Expiration time in days cannot be negative or empty",
-            "content": {
-                "application/json": {"example": {"Message": "Expiration time in days cannot be negative or empty"}}
-            },
-        },
-    },
-)
-async def update_recipients_expiration_time(
-    recipient_name: str,
-    expiration_time_in_days: int,
-    response: Response = None,
-):
-    """Rotate a recipient token for Databricks to opensharing protocol."""
-
-    if expiration_time_in_days < 0 or expiration_time_in_days is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Expiration time in days cannot be negative or empty",
-        )
-
-    recipient = get_recipient_by_name(recipient_name)
-
-    if not recipient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
-        )
-
-    recipient = update_recipient_expiration_time(
-        recipient_name=recipient_name,
-        expiration_time=expiration_time_in_days,
-    )
-
-    if response:
-        response.status_code = status.HTTP_200_OK
-    return recipient
+    These become the function names in generated client SDKs.
+    """
+    if route.tags:
+        return f"{route.tags[0]}-{route.name}"
+    return route.name
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(APP, host="0.0.0.0", port=8000)
+    app = create_app()
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     including environment variables.
     """
 
-    s3_bucket_name: str
-    """Name of the S3 bucket used by this API as the underlying file store."""
+    dltshr_workspace_url: str
+    """Databricks Delta Sharing workspace URL."""
 
     model_config = SettingsConfigDict(case_sensitive=False)
