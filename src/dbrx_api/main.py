@@ -38,6 +38,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         docs_url="/",  # its easier to find the docs when they live on the base url
         generate_unique_id_function=custom_generate_unique_id,
+        swagger_ui_parameters={
+            "defaultModelsExpandDepth": -1,  # Hide schemas section
+            "defaultModelExpandDepth": 1,  # Keep models collapsed if shown
+        },
     )
     app.state.settings = settings
 
