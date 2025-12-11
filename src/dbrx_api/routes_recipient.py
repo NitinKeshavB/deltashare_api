@@ -80,17 +80,7 @@ async def get_recipients(request: Request, recipient_name: str, response: Respon
                     }
                 }
             },
-        },
-        status.HTTP_204_NO_CONTENT: {
-            "description": "No recipients found for search criteria",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "No recipients found for search criteria.",
-                    }
-                }
-            },
-        },
+        }
     },
 )
 async def list_recipients_all(
@@ -107,7 +97,7 @@ async def list_recipients_all(
 
     if len(recipients) == 0:
         return JSONResponse(
-            status_code=status.HTTP_204_NO_CONTENT, content={"detail": "No recipients found for search criteria."}
+            status_code=status.HTTP_200_OK, content={"detail": "No recipients found for search criteria."}
         )
 
     response.status_code = status.HTTP_200_OK
@@ -209,7 +199,7 @@ async def create_recipient_databricks_to_databricks(
             detail=recipient,
         )
 
-    if "already exists with same sharing identifier" in recipient:
+    if isinstance(recipient, str) and "already exists with same sharing identifier" in recipient:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=recipient,
@@ -338,6 +328,16 @@ async def rotate_recipient_tokens(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=recipient,
         )
+    elif isinstance(recipient, str) and "Permission denied" in recipient:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=recipient,
+        )
+    elif isinstance(recipient, str) and "non-TOKEN type recipient" in recipient:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=recipient,
+        )
     else:
         response.status_code = status.HTTP_200_OK
         return recipient
@@ -376,7 +376,7 @@ async def add_client_ip_to_databricks_opensharing(
     if recipient.authentication_type == AuthenticationType.DATABRICKS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot revoke IP addresses for DATABRICKS to DATABRICKS type recipient. IP access lists only work with TOKEN authentication.",
+            detail="Cannot add IP addresses for DATABRICKS to DATABRICKS type recipient. IP access lists only work with TOKEN authentication.",
         )
 
     if not ip_access_list or len(ip_access_list) == 0:
@@ -402,7 +402,12 @@ async def add_client_ip_to_databricks_opensharing(
 
     recipient = add_recipient_ip(recipient_name, ip_access_list, settings.dltshr_workspace_url)
 
-    if recipient:
+    if isinstance(recipient, str) and "Permission denied" in recipient:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=recipient,
+        )
+    else:
         response.status_code = status.HTTP_200_OK
     return recipient
 
@@ -479,7 +484,12 @@ async def revoke_client_ip_from_databricks_opensharing(
 
     recipient = revoke_recipient_ip(recipient_name, ip_access_list, settings.dltshr_workspace_url)
 
-    if recipient:
+    if isinstance(recipient, str) and "Permission denied" in recipient:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=recipient,
+        )
+    else:
         response.status_code = status.HTTP_200_OK
     return recipient
 
@@ -516,10 +526,13 @@ async def update_recipients_description(
     """Rotate a recipient token for Databricks to opensharing protocol."""
     settings: Settings = request.app.state.settings
 
-    if not description:
+    # Remove all quotes and spaces to check if description contains actual content
+    cleaned_description = description.strip().replace('"', "").replace("'", "").replace(" ", "")
+
+    if not description or not cleaned_description:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Description cannot be empty",
+            detail="Description cannot be empty or contain only spaces, quotes, or a combination thereof",
         )
 
     recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
@@ -535,7 +548,8 @@ async def update_recipients_description(
         description=description,
         dltshr_workspace_url=settings.dltshr_workspace_url,
     )
-    if isinstance(recipient, str) and recipient == "User is not an owner of Recipient":
+
+    if isinstance(recipient, str) and "Permission denied" in recipient:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -588,7 +602,6 @@ async def update_recipients_expiration_time(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Expiration time in days cannot be negative or empty",
         )
-
     else:
         recipient = update_recipient_expiration_time(
             recipient_name=recipient_name,
@@ -596,6 +609,14 @@ async def update_recipients_expiration_time(
             dltshr_workspace_url=settings.dltshr_workspace_url,
         )
 
-        if recipient:
+        if isinstance(recipient, str) and "Permission denied" in recipient:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Permission denied to update expiration time of recipient: "
+                    f"{recipient_name} as user is not the owner"
+                ),
+            )
+        else:
             response.status_code = status.HTTP_200_OK
         return recipient

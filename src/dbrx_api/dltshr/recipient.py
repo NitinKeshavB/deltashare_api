@@ -223,6 +223,12 @@ def rotate_recipient_token(
         elif "There are already two activated tokens for recipient" in message:
             print(f"✗ Error: Recipient '{recipient_name}' " f"already has maximum active tokens.")
             return "Recipient already has maximum number of active tokens"
+        elif "User is not an owner of Recipient" in message:
+            print("✗ Permission denied to rotate token of recipient as user is not the owner")
+            return "Permission denied to rotate token of recipient as user is not the owner of the recipient"
+        elif "non-TOKEN authentication type" in message:
+            print(f"✗ Error: Recipient '{recipient_name}' is not a TOKEN type recipient.")
+            return f"Recipient '{recipient_name}' is non-TOKEN type recipient (databricks to databricks) hence cannot rotate token"
         else:
             print(f"✗ Unexpected error rotating token: {ex}")
             raise
@@ -275,8 +281,13 @@ def add_recipient_ip(
 
         return response
     except Exception as ex:
-        print(f"✗ Unexpected error updating IP access list: {ex}")
-        return None
+        message = str(ex)
+        if "User is not an owner of Recipient" in message:
+            print("✗ Permission denied to add IP to recipient as user is not the owner")
+            return "Permission denied to add IP to recipient as user is not the owner of the recipient"
+        else:
+            print(f"✗ Unexpected error updating IP access list: {ex}")
+            raise
 
 
 def revoke_recipient_ip(
@@ -355,8 +366,12 @@ def revoke_recipient_ip(
         return response
 
     except Exception as ex:
-        str(ex)
-        print(f"✗ Unexpected error removing IP addresses: {ex}")
+        message = str(ex)
+        if "User is not an owner of Recipient" in message:
+            print("✗ Permission denied to revoke IP to recipient as user is not the owner")
+            return "Permission denied to revoke IP to recipient as user is not the owner of the recipient"
+        else:
+            print(f"✗ Unexpected error removing IP addresses: {ex}")
         raise
 
 
@@ -397,7 +412,7 @@ def update_recipient_description(
         error_msg = str(ex)
         if "User is not an owner of Recipient" in error_msg:
             print(f"✗ Permission denied to update description of recipient as user is not the owner")
-            return "User is not an owner of Recipient"
+            return "Permission denied to update description of recipient as user is not the owner"
         else:
             print(f"✗ Unexpected error updating recipient description: {ex}")
             raise
@@ -435,8 +450,8 @@ def update_recipient_expiration_time(
     except Exception as ex:
         error_msg = str(ex)
         if "User is not an owner of Recipient" in error_msg:
-            print(f"✗ Permission denied to update description of recipient as user is not the owner")
-            return "User is not an owner of Recipient"
+            print(f"✗ Permission denied to update expiration time of recipient as user is not the owner")
+            return "Permission denied to update expiration time of recipient as user is not the owner"
         else:
             print(f"✗ Unexpected error updating recipient description: {ex}")
             raise
