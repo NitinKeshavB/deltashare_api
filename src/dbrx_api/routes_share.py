@@ -1,38 +1,500 @@
-from databricks.sdk.service.sharing import RecipientInfo
+import re
+from typing import Optional
+
+from databricks.sdk.service.sharing import (
+    ShareInfo,
+    UpdateSharePermissionsResponse,
+)
 from fastapi import (
     APIRouter,
+    Body,
+    Depends,
     HTTPException,
     Request,
     Response,
     status,
 )
+from fastapi.responses import JSONResponse
 
-from dbrx_api.dltshr.recipient import get_recipients as get_recipient_by_name
+from dbrx_api.dltshr.share import add_data_object_to_share
+from dbrx_api.dltshr.share import add_recipients_to_share as adding_recipients_to_share
+from dbrx_api.dltshr.share import create_share as create_share_func
+from dbrx_api.dltshr.share import (
+    delete_share,
+    get_shares,
+    list_shares_all,
+)
+from dbrx_api.dltshr.share import remove_recipients_from_share as removing_recipients_from_share
+from dbrx_api.dltshr.share import revoke_data_object_from_share
+from dbrx_api.schemas import (
+    AddDataObjectsRequest,
+    GetSharesQueryParams,
+    GetSharesResponse,
+)
 from dbrx_api.settings import Settings
 
 ROUTER_SHARE = APIRouter(tags=["Shares"])
 
 
 @ROUTER_SHARE.get(
-    "/recipients/{recipient_name}",
+    "/shares/{share_name}",
     responses={
         status.HTTP_404_NOT_FOUND: {
-            "description": "Recipient not found",
-            "content": {"application/json": {"example": {"detail": "Recipient not found"}}},
+            "description": "Share not found",
+            "content": {"application/json": {"example": {"detail": "Share not found"}}},
         },
     },
 )
-async def get_shares(request: Request, recipient_name: str, response: Response) -> RecipientInfo:
-    """Get a specific recipient by name."""
+async def get_shares_by_name(request: Request, share_name: str, response: Response) -> ShareInfo:
+    """Retrieve detailed information for a specific Delta Sharing share by name."""
     settings: Settings = request.app.state.settings
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    share = get_shares(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
 
-    if recipient is None:
+    if share is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Recipient not found: {recipient_name}",
+            detail=f"Share not found: {share_name}",
+        )
+    else:
+        response.status_code = status.HTTP_200_OK
+    return share
+
+
+@ROUTER_SHARE.get(
+    "/shares",
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Shares fetched successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "Message": "Fetched 5 shares!",
+                        "Share": [],
+                    }
+                }
+            },
+        },
+        status.HTTP_204_NO_CONTENT: {
+            "description": "No shares found for search criteria",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "No shares found for search criteria.",
+                    }
+                }
+            },
+        },
+    },
+)
+async def list_shares_all_or_with_prefix(
+    request: Request, response: Response, query_params: GetSharesQueryParams = Depends()
+):
+    """List all Delta Sharing shares with optional prefix filtering and pagination."""
+    settings: Settings = request.app.state.settings
+
+    shares = list_shares_all(
+        prefix=query_params.prefix,
+        max_results=query_params.page_size,
+        dltshr_workspace_url=settings.dltshr_workspace_url,
+    )
+
+    if len(shares) == 0:
+        return JSONResponse(
+            status_code=status.HTTP_204_NO_CONTENT, content={"detail": "No shares found for search criteria."}
         )
 
-    if recipient:
-        response.status_code = status.HTTP_200_OK
-    return recipient
+    response.status_code = status.HTTP_200_OK
+    message = f"Fetched {len(shares)} shares!"
+    return GetSharesResponse(Message=message, Share=shares)
+
+
+@ROUTER_SHARE.delete(
+    "/shares/{share_name}",
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Share not found",
+            "content": {"application/json": {"example": {"detail": "Share not found"}}},
+        },
+        status.HTTP_200_OK: {
+            "description": "Deleted Share successfully!",
+            "content": {"application/json": {"example": {"detail": "Deleted Share successfully!"}}},
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Permission denied to delete share as user is not the owner",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Permission denied to delete share as user is not the owner"}
+                }
+            },
+        },
+    },
+)
+async def delete_share_by_name(request: Request, share_name: str):
+    """Permanently delete a Delta Sharing share and all its associated permissions."""
+    settings: Settings = request.app.state.settings
+    share = get_shares(share_name, settings.dltshr_workspace_url)
+    if share:
+        res = delete_share(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+        if isinstance(res, str) and ("User is not an owner of Share" in res):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied to delete share as user is not the owner: {share_name}",
+            )
+        elif isinstance(res, str) and "not found" in res:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Share not found: {share_name}",
+            )
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={"message": "Deleted Share successfully!"},
+            )
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Share not found: {share_name}",
+    )
+
+
+@ROUTER_SHARE.post(
+    "/shares/{share_name}",
+    responses={
+        status.HTTP_201_CREATED: {
+            "description": "Recipients created successfully",
+            "content": {"application/json": {"example": {"Message": "Recipient created successfully!"}}},
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "Recipient already exists",
+            "content": {"application/json": {"example": {"Message": "Recipient already exists"}}},
+        },
+    },
+)
+async def create_share(
+    request: Request,
+    response: Response,
+    share_name: str,
+    description: str,
+    storage_root: Optional[str] = None,
+) -> ShareInfo:
+    """Create a new Delta Sharing share for Databricks-to-Databricks data sharing."""
+    if not share_name or not share_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Share name must be provided and cannot be empty.",
+        )
+
+    # Validate share name format
+    if not re.match(r"^[a-zA-Z0-9_-]+$", share_name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Invalid share name - Valid names must contain only "
+                "alphanumeric characters, underscores, and hyphens, and "
+                "cannot contain spaces, periods, forward slashes, or "
+                f"control characters: {share_name}"
+            ),
+        )
+
+    settings: Settings = request.app.state.settings
+    share_resp = get_shares(share_name, settings.dltshr_workspace_url)
+
+    if share_resp:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Share already exists: {share_name}",
+        )
+
+    share_resp = create_share_func(
+        share_name=share_name,
+        description=description,
+        storage_root=storage_root,
+        dltshr_workspace_url=settings.dltshr_workspace_url,
+    )
+
+    if isinstance(share_resp, str) and ("is not a valid name" in share_resp):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Invalid share name - Valid names must contain only "
+                f"alphanumeric characters and underscores, and cannot "
+                f"contain spaces, periods, forward slashes, or control "
+                f"character: {share_name}"
+            ),
+        )
+
+    response.status_code = status.HTTP_201_CREATED
+    return share_resp
+
+
+@ROUTER_SHARE.put(
+    "/shares/{share_name}/dataobject/add",
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Share not found",
+            "content": {"application/json": {"example": {"Message": "Share not found"}}},
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "Data object already exists in share",
+            "content": {"application/json": {"example": {"Message": "Data object already exists in share"}}},
+        },
+    },
+)
+async def add_data_objects_to_share(
+    request: Request,
+    share_name: str,
+    response: Response,
+    objects_to_add: AddDataObjectsRequest = Body(
+        ...,
+        example={
+            "tables": ["catalog.schema.table1", "catalog.schema.table2"],
+            "views": ["catalog.schema.view1"],
+            "schemas": ["catalog.schema"],
+        },
+    ),
+) -> ShareInfo:
+    """Add data objects (tables, views, schemas) to an existing Delta Sharing share."""
+    settings: Settings = request.app.state.settings
+
+    share = get_shares(share_name, settings.dltshr_workspace_url)
+
+    if not share:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Share not found: {share_name}",
+        )
+
+    result = add_data_object_to_share(
+        share_name=share_name,
+        objects_to_add=objects_to_add.model_dump(),
+        dltshr_workspace_url=settings.dltshr_workspace_url,
+    )
+
+    # Handle error responses (string messages)
+    if isinstance(result, str):
+        if "already exists" in result:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=result,
+            )
+        elif "Permission denied" in result:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=result,
+            )
+        elif "not found" in result or "does not exist" in result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result,
+            )
+        elif "No data objects provided" in result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+        elif "Cannot add schemas" in result or "Invalid parameter" in result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+
+    response.status_code = status.HTTP_200_OK
+    return result
+
+
+@ROUTER_SHARE.put(
+    "/shares/{share_name}/dataobject/revoke",
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Share not found",
+            "content": {"application/json": {"example": {"Message": "Share not found"}}},
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "Failed to revoke data objects",
+            "content": {"application/json": {"example": {"Message": "Failed to revoke data objects"}}},
+        },
+    },
+)
+async def revoke_data_objects_from_share(
+    request: Request,
+    share_name: str,
+    response: Response,
+    objects_to_revoke: AddDataObjectsRequest = Body(
+        ...,
+        example={
+            "tables": ["catalog.schema.table1", "catalog.schema.table2"],
+            "views": ["catalog.schema.view1"],
+            "schemas": ["catalog.schema"],
+        },
+    ),
+) -> ShareInfo:
+    """Remove data objects (tables, views, schemas) from a Delta Sharing share."""
+    settings: Settings = request.app.state.settings
+
+    share = get_shares(share_name, settings.dltshr_workspace_url)
+
+    if not share:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Share not found: {share_name}",
+        )
+
+    result = revoke_data_object_from_share(
+        share_name=share_name,
+        objects_to_revoke=objects_to_revoke.model_dump(),
+        dltshr_workspace_url=settings.dltshr_workspace_url,
+    )
+
+    # Handle error responses (string messages)
+    if isinstance(result, str):
+        if "Permission denied" in result or "User is not an owner" in result:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=result,
+            )
+        elif "not found" in result or "does not exist" in result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result,
+            )
+        elif "No data objects provided" in result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+        elif "Cannot remove schemas" in result or "Invalid parameter" in result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+
+    response.status_code = status.HTTP_200_OK
+    return result
+
+
+@ROUTER_SHARE.put(
+    "/shares/{share_name}/recipients/add",
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Recipient added successfully",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Share or recipient not found",
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "Recipient already has access to share",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Permission denied",
+        },
+    },
+)
+async def add_recipient_to_share(
+    share_name: str,
+    recipient_name: str,
+    request: Request,
+    response: Response,
+) -> UpdateSharePermissionsResponse:
+    """Grant SELECT permission to a recipient for a Delta Sharing share."""
+    settings: Settings = request.app.state.settings
+
+    # Call SDK function directly
+    result = adding_recipients_to_share(
+        dltshr_workspace_url=settings.dltshr_workspace_url,
+        share_name=share_name,
+        recipient_name=recipient_name,
+    )
+
+    # Handle error responses (string messages from SDK)
+    if isinstance(result, str):
+        result_lower = result.lower()
+        if "already has" in result_lower or "already exists" in result_lower:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=result,
+            )
+        elif "Permission denied" in result or "not an owner" in result:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=result,
+            )
+        elif "not found" in result or "does not exist" in result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+
+    # Success - return UpdateSharePermissionsResponse object
+    response.status_code = status.HTTP_200_OK
+    return result
+
+
+@ROUTER_SHARE.put(
+    "/shares/{share_name}/recipients/remove",
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Recipient removed successfully",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Share or recipient not found",
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "Recipient already has access to share",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Permission denied",
+        },
+    },
+)
+async def remove_recipients_from_share(
+    share_name: str,
+    recipient_name: str,
+    request: Request,
+    response: Response,
+) -> UpdateSharePermissionsResponse:
+    """Revoke SELECT permission from a recipient for a Delta Sharing share."""
+    settings: Settings = request.app.state.settings
+
+    # Call SDK function directly
+    result = removing_recipients_from_share(
+        dltshr_workspace_url=settings.dltshr_workspace_url,
+        share_name=share_name,
+        recipient_name=recipient_name,
+    )
+
+    # Handle error responses (string messages from SDK)
+    if isinstance(result, str):
+        result.lower()
+        if "Permission denied" in result or "not an owner" in result:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=result,
+            )
+        elif "not found" in result or "does not exist" in result or "does not have access" in result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result,
+            )
+
+    # Success - return UpdateSharePermissionsResponse object
+    response.status_code = status.HTTP_200_OK
+    return result

@@ -165,7 +165,7 @@ async def delete_recipient_by_name(request: Request, recipient_name: str):
 
 
 @ROUTER_RECIPIENT.post(
-    "/Recipients/d2d/{recipient_name}",
+    "/recipients/d2d/{recipient_name}",
     responses={
         status.HTTP_201_CREATED: {
             "description": "Recipients created successfully",
@@ -224,7 +224,7 @@ async def create_recipient_databricks_to_databricks(
 
 
 @ROUTER_RECIPIENT.post(
-    "/Recipients/d2o/{recipient_name}",
+    "/recipients/d2o/{recipient_name}",
     responses={
         status.HTTP_201_CREATED: {
             "description": "Recipients created successfully",

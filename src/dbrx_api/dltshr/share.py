@@ -27,20 +27,20 @@ import os
 ###################################
 
 
-def list_share(
+def list_shares_all(
     dltshr_workspace_url: str,
     max_results: Optional[int] = 100,
     prefix: Optional[str] = None,
 ) -> List:
-    """List all Delta Sharing recipients with optional prefix filter.
+    """List Delta Sharing shares with optional prefix filter.
 
     Args:
         dltshr_workspace_url: Databricks workspace URL
         max_results: Maximum results per page (default: 100)
-        prefix: Optional name prefix to filter recipients
+        prefix: Optional name prefix filter
 
     Returns:
-        List of recipient objects
+        List of ShareInfo objects
     """
     try:
         session_token = get_auth_token(datetime.now(timezone.utc))[0]
@@ -48,8 +48,8 @@ def list_share(
 
         all_shares = []
 
-        # List all shares using SDK
-        for share in w_client.shares.list(max_results=max_results):
+        # List all shares using SDK - use list_shares method (not list)
+        for share in w_client.shares.list_shares(max_results=max_results):
             if prefix:
                 if prefix in str(share.name):
                     all_shares.append(share)
@@ -63,14 +63,14 @@ def list_share(
 
 
 def get_shares(share_name: str, dltshr_workspace_url: str):
-    """Get recipient details by name.
+    """Get share details by name.
 
     Args:
-        recipient_name: Name of the recipient (case-sensitive)
+        share_name: Share name (case-sensitive)
         dltshr_workspace_url: Databricks workspace URL
 
     Returns:
-        RecipientInfo object or None if not found
+        ShareInfo object or None if not found
     """
     try:
         # Get authentication token
@@ -88,26 +88,28 @@ def get_shares(share_name: str, dltshr_workspace_url: str):
         return None
 
 
-def create_share(dltshr_workspace_url: str, share_name: str, description: str, storage_root: str = None):
-    """Create a share for Delta Sharing.
+def create_share(
+    dltshr_workspace_url: str,
+    share_name: str,
+    description: str,
+    storage_root: Optional[str] = None,
+):
+    """Create a Delta Sharing share.
 
     Args:
-        workspace_url: Databricks workspace URL
+        dltshr_workspace_url: Databricks workspace URL
         share_name: Unique share name
-        description: Share description/comment
-        storage_root: Optional storage root URL for the share
+        description: Share description
+        storage_root: Optional storage root URL
 
     Returns:
-        ShareInfo object or error message string
-
-    Note:
-        Caller must be a metastore admin or have CREATE_SHARE privilege.
+        ShareInfo object on success, error message string on failure
     """
     # Get authentication token
     session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
     # Create workspace client
-    w_client = WorkspaceClient(host=workspace_url, token=session_token)
+    w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
     try:
         # Create share
         response = w_client.shares.create(name=share_name, comment=description, storage_root=storage_root)
@@ -122,9 +124,6 @@ def create_share(dltshr_workspace_url: str, share_name: str, description: str, s
             return (
                 "Permission denied to create share. Caller must be a metastore admin or have CREATE_SHARE privilege."
             )
-        elif "User is not an owner of Share" in err_msg or "PERMISSION_DENIED" in err_msg:
-            print(f"✗ Permission denied to delete share: {share_name}")
-            return "User is not an owner of Share"
         elif "INVALID_PARAMETER_VALUE" in err_msg or "invalid" in err_msg.lower():
             print(f"✗ Invalid parameter: {err_msg}")
             return f"Invalid parameter in share creation: {err_msg}"
@@ -146,19 +145,15 @@ def add_data_object_to_share(
     share_name: str,
     objects_to_add: [List[dict]],
 ):
-    """Create a share for Delta Sharing.
+    """Add data objects (tables, views, schemas) to a share.
 
     Args:
         dltshr_workspace_url: Databricks workspace URL
-        share_name: Unique share name
-        description: Share description/comment
-        storage_root: Optional storage root URL for the share
+        share_name: Share name
+        objects_to_add: Dict with 'tables', 'views', 'schemas' lists
 
     Returns:
-        ShareInfo object or error message string
-
-    Note:
-        Caller must be a metastore admin or have CREATE_SHARE privilege.
+        ShareInfo object on success, error message string on failure
     """
     # Get authentication token
     session_token = get_auth_token(datetime.now(timezone.utc))[0]
@@ -248,17 +243,17 @@ def add_data_object_to_share(
         err_msg = str(e)
 
         if "ResourceAlreadyExists" in err_msg or "already exists" in err_msg:
-            print(f"✗ Data object already exists in share: {err_msg}")
-            return f"Data object already exists in share: {share_name}"
+            print(f"✗ Data object already exists in share- {share_name}: {err_msg}")
+            return f"Data object already exists in share- {share_name}"
         elif "PERMISSION_DENIED" in err_msg or "PermissionDenied" in err_msg:
             print(f"✗ Permission denied: User lacks SELECT privilege on data objects or is not share owner")
             return "Permission denied. Share owner must have SELECT privilege on data objects."
         elif "User is not an owner of Share" in err_msg or "PERMISSION_DENIED" in err_msg:
-            print(f"✗ Permission denied to delete share: {share_name}")
-            return "User is not an owner of Share"
+            print(f"✗ Permission denied to add objects as User is not an owner of Share- {share_name}")
+            return f"Permission denied to add objects as User is not an owner of Share- {share_name}"
         elif "RESOURCE_DOES_NOT_EXIST" in err_msg or "does not exist" in err_msg:
-            print(f"✗ Data object not found: {err_msg}")
-            return f"Data object not found: {err_msg}"
+            print(f"✗ Data object not found in share- {share_name}: {err_msg}")
+            return f"Data object not found in share- {share_name}: {err_msg}"
         elif (
             "databricks.sdk.errors.platform.InvalidParameterValue" in err_msg
             or "is a table and not a VIEW"
@@ -267,7 +262,7 @@ def add_data_object_to_share(
             print(f"✗ Invalid parameter: {err_msg}")
             return f"Invalid parameter in data object : {err_msg}"
         else:
-            print(f"✗ Error adding data objects to share '{share_name}': {e}")
+            print(f"✗ Error adding data objects to share- '{share_name}': {e}")
             raise
 
 
@@ -276,19 +271,15 @@ def revoke_data_object_from_share(
     share_name: str,
     objects_to_revoke: [List[dict]],
 ):
-    """Create a share for Delta Sharing.
+    """Remove data objects (tables, views, schemas) from a share.
 
     Args:
         dltshr_workspace_url: Databricks workspace URL
-        share_name: Unique share name
-        description: Share description/comment
-        storage_root: Optional storage root URL for the share
+        share_name: Share name
+        objects_to_revoke: Dict with 'tables', 'views', 'schemas' lists
 
     Returns:
-        ShareInfo object or error message string
-
-    Note:
-        Caller must be a metastore admin or have CREATE_SHARE privilege.
+        ShareInfo object on success, error message string on failure
     """
     # Get authentication token
     session_token = get_auth_token(datetime.now(timezone.utc))[0]
@@ -377,17 +368,16 @@ def revoke_data_object_from_share(
     except Exception as e:
         err_msg = str(e)
 
-        if "ResourceAlreadyExists" in err_msg or "already exists" in err_msg:
-            print(f"✗ Data object already exists in share: {err_msg}")
-            return f"Data object already exists in share: {share_name}"
-        elif "PERMISSION_DENIED" in err_msg or "PermissionDenied" in err_msg:
+        if "PERMISSION_DENIED" in err_msg or "PermissionDenied" in err_msg:
             print(f"✗ Permission denied: User lacks SELECT privilege on data objects or is not share owner")
             return "Permission denied. Share owner must have SELECT privilege on data objects."
         elif "User is not an owner of Share" in err_msg or "PERMISSION_DENIED" in err_msg:
-            return "User is not an owner of Share"
+            return (
+                f"Permission denied to revoke dataobjects from share  as User is not an owner of Share- {share_name}"
+            )
         elif "RESOURCE_DOES_NOT_EXIST" in err_msg or "does not exist" in err_msg:
             print(f"✗ Data object not found: {err_msg}")
-            return f"Data object not found: {err_msg}"
+            return f"Data object not found in share- {share_name}: {err_msg}"
         elif (
             "databricks.sdk.errors.platform.InvalidParameterValue" in err_msg
             or "is a table and not a VIEW"
@@ -396,7 +386,7 @@ def revoke_data_object_from_share(
             print(f"✗ Invalid parameter: {err_msg}")
             return f"Invalid parameter in data object : {err_msg}"
         else:
-            print(f"✗ Error adding data objects to share '{share_name}': {e}")
+            print(f"✗ Error adding data objects to share- '{share_name}': {e}")
             raise
 
 
@@ -405,33 +395,87 @@ def add_recipients_to_share(
     share_name: str,
     recipient_name: str,
 ):
-    """List all Delta Sharing recipients with optional prefix filter.
+    """Grant recipient SELECT permission on a share.
 
     Args:
         dltshr_workspace_url: Databricks workspace URL
-        max_results: Maximum results per page (default: 100)
-        prefix: Optional name prefix to filter recipients
+        share_name: Share name
+        recipient_name: Recipient name
 
     Returns:
-        List of recipient objects
+        UpdateSharePermissionsResponse on success, error message string on failure
     """
     session_token = get_auth_token(datetime.now(timezone.utc))[0]
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
     try:
+        # Get share details to check ownership
+        share_info = w_client.shares.get(name=share_name)
+
+        # Get current user info to check ownership
+        current_user = w_client.current_user.me()
+        current_username = current_user.user_name
+
+        # Check if current user is the owner of the share
+        if share_info.owner != current_username:
+            msg = f"Permission denied to add recipient. User is not an " f"owner of Share: {share_name}"
+            print(f"✗ {msg}")
+            return msg
+
+        # Check if current user is the owner of the recipient
+        try:
+            recipient_info = w_client.recipients.get(name=recipient_name)
+            if recipient_info.owner != current_username:
+                msg = f"Permission denied to add recipient. User is not " f"an owner of Recipient: {recipient_name}"
+                print(f"✗ {msg}")
+                return msg
+        except Exception as recipient_error:
+            # If recipient doesn't exist, return error
+            if "does not exist" in str(recipient_error).lower():
+                msg = f"Recipient not found: {recipient_name}"
+                print(f"✗ {msg}")
+                return msg
+            # For other errors, let it propagate
+            raise
+
+        # Check if recipient already has access
+        perms = w_client.shares.share_permissions(name=share_name)
+        if perms and hasattr(perms, "privilege_assignments"):
+            for assignment in perms.privilege_assignments or []:
+                if assignment.principal == recipient_name and assignment.privileges:
+                    msg = f"Recipient {recipient_name} already has " f"access to share: {share_name}"
+                    print(f"✗ {msg}")
+                    return msg
+
+        # Try to add recipient permissions
         response = w_client.shares.update_permissions(
             name=share_name,
-            changes=[
-                PermissionsChange(principal=recipient_name, add=["SELECT"])  # SELECT is the only privilege for shares
-            ],
+            changes=[PermissionsChange(principal=recipient_name, add=["SELECT"])],
         )
         return response
     except Exception as e:
-        error_msg = str(ex)
-        if "User is not an owner of Share" in error_msg or "PERMISSION_DENIED" in error_msg:
-            print(f"✗ Permission denied to delete share: {share_name}")
-            return "User is not an owner of Share"
+        error_msg = str(e)
+        error_msg_lower = error_msg.lower()
+
+        # Check for already exists/granted errors
+        if (
+            "already has" in error_msg_lower
+            or "already exists" in error_msg_lower
+            or "already been granted" in error_msg_lower
+            or "already granted" in error_msg_lower
+            or "RESOURCE_ALREADY_EXISTS" in error_msg
+        ):
+            msg = f"Recipient {recipient_name} already has access to " f"share: {share_name}"
+            print(f"✗ {msg}")
+            return msg
+        elif "User is not an owner of Share" in error_msg or "PERMISSION_DENIED" in error_msg:
+            msg = f"Permission denied to add recipient. User is not an " f"owner of Share: {share_name}"
+            print(f"✗ {msg}")
+            return msg
+        elif "RESOURCE_DOES_NOT_EXIST" in error_msg or "does not exist" in error_msg_lower:
+            print(f"✗ Share or recipient not found: {error_msg}")
+            return f"Share or recipient not found: {error_msg}"
         else:
-            print(f"✗ Failed to add recipient {recipient_name} access to share {share_name} : {str(e)}")
+            print(f"✗ Failed to add recipient {recipient_name} access to " f"share {share_name}: {error_msg}")
             raise
 
 
@@ -440,33 +484,88 @@ def remove_recipients_from_share(
     share_name: str,
     recipient_name: str,
 ):
-    """List all Delta Sharing recipients with optional prefix filter.
+    """Revoke recipient SELECT permission from a share.
 
     Args:
         dltshr_workspace_url: Databricks workspace URL
-        max_results: Maximum results per page (default: 100)
-        prefix: Optional name prefix to filter recipients
+        share_name: Share name
+        recipient_name: Recipient name
 
     Returns:
-        List of recipient objects
+        UpdateSharePermissionsResponse on success, error message string on failure
     """
     session_token = get_auth_token(datetime.now(timezone.utc))[0]
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
     try:
+        # Get share details to check ownership
+        try:
+            share_info = w_client.shares.get(name=share_name)
+        except Exception as share_error:
+            # If share doesn't exist, return error
+            if "does not exist" in str(share_error).lower():
+                msg = f"Share not found: {share_name}"
+                print(f"✗ {msg}")
+                return msg
+            # For other errors, let it propagate
+            raise
+
+        # Get current user info to check ownership
+        current_user = w_client.current_user.me()
+        current_username = current_user.user_name
+
+        # Check if current user is the owner of the share
+        if share_info.owner != current_username:
+            msg = f"Permission denied to remove recipient. User is not " f"an owner of Share: {share_name}"
+            print(f"✗ {msg}")
+            return msg
+
+        # Check if current user is the owner of the recipient
+        try:
+            recipient_info = w_client.recipients.get(name=recipient_name)
+            if recipient_info.owner != current_username:
+                msg = f"Permission denied to remove recipient. User is not " f"an owner of Recipient: {recipient_name}"
+                print(f"✗ {msg}")
+                return msg
+        except Exception as recipient_error:
+            # If recipient doesn't exist, return error
+            if "does not exist" in str(recipient_error).lower():
+                msg = f"Recipient not found: {recipient_name}"
+                print(f"✗ {msg}")
+                return msg
+            # For other errors, let it propagate
+            raise
+
+        # Check if recipient has access to the share
+        perms = w_client.shares.share_permissions(name=share_name)
+        recipient_has_access = False
+        if perms and hasattr(perms, "privilege_assignments"):
+            for assignment in perms.privilege_assignments or []:
+                if assignment.principal == recipient_name:
+                    recipient_has_access = True
+                    break
+
+        if not recipient_has_access:
+            msg = f"Recipient {recipient_name} does not have access to " f"share: {share_name}"
+            print(f"✗ {msg}")
+            return msg
+
+        # Remove recipient permissions
         response = w_client.shares.update_permissions(
             name=share_name,
-            changes=[
-                PermissionsChange(principal=recipient_name, add=["REMOVE"])  # SELECT is the only privilege for shares
-            ],
+            changes=[PermissionsChange(principal=recipient_name, remove=["SELECT"])],
         )
         return response
     except Exception as e:
-        error_msg = str(ex)
+        error_msg = str(e)
+        error_msg_lower = error_msg.lower()
         if "User is not an owner of Share" in error_msg or "PERMISSION_DENIED" in error_msg:
-            print(f"✗ Permission denied to delete share: {share_name}")
-            return "User is not an owner of Share"
+            print(f"✗ Permission denied to remove recipient: {share_name}")
+            return f"Permission denied to remove recipient. User is not an " f"owner of Share: {share_name}"
+        elif "does not exist" in error_msg_lower:
+            print(f"✗ Share or recipient not found: {error_msg}")
+            return f"Share or recipient not found: {error_msg}"
         else:
-            print(f"✗ Failed to remove recipient {recipient_name} access to share {share_name} : {str(e)}")
+            print(f"✗ Failed to remove recipient {recipient_name} access " f"to share {share_name}: {str(e)}")
             raise
 
 
@@ -474,19 +573,16 @@ def delete_share(
     share_name: str,
     dltshr_workspace_url: str,
 ):
-    """Delete share permanently.
+    """Permanently delete a share.
 
     Args:
         share_name: Share name
         dltshr_workspace_url: Databricks workspace URL
 
     Returns:
-        None on success or error message string
+        None on success, error message string on failure
     """
     # Validate parameters
-    if not share_name or not share_name.strip():
-        print("✗ Error: share_name cannot be empty")
-        return None
 
     try:
         session_token = get_auth_token(datetime.now(timezone.utc))[0]
@@ -498,10 +594,15 @@ def delete_share(
 
     except Exception as ex:
         error_msg = str(ex)
-        if "User is not an owner of Share" in error_msg or "PERMISSION_DENIED" in error_msg:
+        error_msg_lower = error_msg.lower()
+        if (
+            "User is not an owner of Share" in error_msg
+            or "PERMISSION_DENIED" in error_msg
+            or "PERMISSION DENIED" in error_msg
+        ):
             print(f"✗ Permission denied to delete share: {share_name}")
             return "User is not an owner of Share"
-        elif "RESOURCE_DOES_NOT_EXIST" in error_msg or "does not exist" in error_msg:
+        elif "RESOURCE_DOES_NOT_EXIST" in error_msg or "does not exist" in error_msg_lower:
             print(f"✗ Share not found: {share_name}")
             return f"Share not found: {share_name}"
         else:
@@ -510,11 +611,10 @@ def delete_share(
 
 
 if __name__ == "__main__":
-    import os
-
     dltshr_workspace_url = os.getenv("DLTSHR_WORKSPACE_URL")
-    shares = delete_share(
+    shares = add_recipients_to_share(
         dltshr_workspace_url=dltshr_workspace_url,
-        share_name="share_1-1765308492429445086",
+        share_name="share_1765402291",
+        recipient_name="gmail_test",
     )
     print(shares)

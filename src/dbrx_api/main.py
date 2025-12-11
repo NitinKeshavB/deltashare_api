@@ -33,7 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         | [Delta Share CDR Sign off](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/jlltknowledgebase/pages/20324713069/External+Delta+Sharing+Framework+-+Architectural+Design+High+Level) | `signed-off` |
         | [Delta Share Project Repo](https://github.com/JLLT-Apps/JLLT-EDP-DeltaShare) | `Databricks-API-Web repo` |
         | [Delta Share status codes](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/edit-v2/20587249733?draftShareId=a715edeb-f8fc-4c02-90c4-a40ffdff3ecd) | `update-in-progress` |
-        | [API Status](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587970637/API+Dev+Status) | <img alt="Static Badge" src="https://img.shields.io/badge/Recipient_Done-Green?style=for-the-badge&logoColor=green"> <img alt="Static Badge" src="https://img.shields.io/badge/share_in--progress-blue?style=for-the-badge&color=blue"> |
+        | [API Status](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587970637/API+Dev+Status) | <img alt="Static Badge" src="https://img.shields.io/badge/Recipient_Done-Green?style=for-the-badge&logoColor=green"> <img alt="Static Badge" src="https://img.shields.io/badge/share_Done-blue?style=for-the-badge&color=blue"> |
         """
         ),
         docs_url="/",  # its easier to find the docs when they live on the base url
@@ -45,8 +45,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
-    app.include_router(ROUTER_RECIPIENT)
     app.include_router(ROUTER_SHARE)
+    app.include_router(ROUTER_RECIPIENT)
     app.add_exception_handler(
         exc_class_or_status_code=pydantic.ValidationError,
         handler=handle_pydantic_validation_errors,
