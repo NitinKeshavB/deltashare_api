@@ -160,12 +160,12 @@ async def delete_share_by_name(request: Request, share_name: str):
     "/shares/{share_name}",
     responses={
         status.HTTP_201_CREATED: {
-            "description": "Recipients created successfully",
-            "content": {"application/json": {"example": {"Message": "Recipient created successfully!"}}},
+            "description": "Shares created successfully",
+            "content": {"application/json": {"example": {"Message": "Share created successfully!"}}},
         },
         status.HTTP_409_CONFLICT: {
-            "description": "Recipient already exists",
-            "content": {"application/json": {"example": {"Message": "Recipient already exists"}}},
+            "description": "Share already exists",
+            "content": {"application/json": {"example": {"Message": "Share already exists"}}},
         },
     },
 )
