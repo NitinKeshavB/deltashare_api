@@ -1,0 +1,204 @@
+---
+description: Python code quality standards - black, isort, flake8, pylint, mypy configuration and conventions
+globs: ["**/*.py"]
+alwaysApply: true
+---
+
+# Python Code Quality Standards
+
+## Code Formatting
+
+### Black Configuration
+- **Line length**: 119 characters
+- **Target Python version**: 3.12+
+- Exclude: `venv/`, `.venv/`, `__pycache__/`
+
+```python
+# Good: Properly formatted
+def create_recipient_d2d(
+    recipient_name: str,
+    recipient_identifier: str,
+    description: str,
+    dltshr_workspace_url: str,
+    sharing_code: Optional[str] = None,
+) -> RecipientInfo:
+    """Create a Databricks-to-Databricks recipient."""
+    ...
+```
+
+### isort Configuration
+- **Profile**: black (compatible with black formatting)
+- **Multi-line output**: VERTICAL_HANGING_INDENT
+- **Force grid wrap**: 2
+- **Line length**: 119
+
+```python
+# Good: Proper import organization
+from datetime import (
+    datetime,
+    timezone,
+)
+from typing import (
+    List,
+    Optional,
+)
+
+from databricks.sdk import WorkspaceClient
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+)
+
+from dbrx_api.schemas import GetSharesResponse
+from dbrx_api.settings import Settings
+```
+
+## Type Hints
+
+### Requirements
+- All public functions MUST have complete type hints
+- Use `typing` module types: `List`, `Dict`, `Optional`, `Union`, `Tuple`
+- Use `|` union syntax for Python 3.10+ where applicable
+- Return type required for all functions except `__init__`
+
+```python
+# Good: Complete type hints
+def get_shares(share_name: str, dltshr_workspace_url: str) -> ShareInfo | None:
+    """Get share details by name."""
+    ...
+
+# Good: Complex return types
+def list_recipients(
+    dltshr_workspace_url: str,
+    max_results: Optional[int] = 100,
+    prefix: Optional[str] = None,
+) -> List[RecipientInfo]:
+    """List all Delta Sharing recipients."""
+    ...
+
+# Bad: Missing type hints
+def process_data(data):  # Missing parameter and return types
+    ...
+```
+
+### Type Hints for Pydantic Models
+```python
+from pydantic import BaseModel, field_validator
+
+class GetSharesQueryParams(BaseModel):
+    """Query parameters for listing shares."""
+
+    prefix: Optional[str] = None
+    page_size: Optional[int] = 100
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that page_size is greater than 0."""
+        if v is not None and v <= 0:
+            raise ValueError("page_size must be greater than 0")
+        return v
+```
+
+## Docstrings
+
+### Convention: Google Style
+All modules, classes, and public functions require docstrings.
+
+```python
+def add_data_object_to_share(
+    dltshr_workspace_url: str,
+    share_name: str,
+    objects_to_add: dict[str, List[str]],
+) -> ShareInfo | str:
+    """Add data objects (tables, views, schemas) to a share.
+
+    Args:
+        dltshr_workspace_url: Databricks workspace URL
+        share_name: Name of the share to update
+        objects_to_add: Dict with 'tables', 'views', 'schemas' lists
+
+    Returns:
+        ShareInfo object on success, error message string on failure
+
+    Raises:
+        DatabricksError: If the Databricks API call fails unexpectedly
+    """
+    ...
+```
+
+## Pylint Configuration
+
+Disabled checks (per pyproject.toml):
+- `line-too-long`: Handled by black
+- `trailing-whitespace`: Handled by black
+- `missing-function-docstring`: Enforce selectively
+- `consider-using-f-string`: Allow both styles
+- `import-error`: May be unavailable in IDE
+- `too-few-public-methods`: Allow small classes
+- `redefined-outer-name`: Common in pytest fixtures
+
+## Flake8 Configuration
+
+- **Docstring convention**: all
+- **Ignored**: D107 (missing __init__ docstring), D212, E501 (line length), W503, W605, D203, D100
+- **Max complexity (radon)**: 10
+
+## mypy Configuration
+
+Use strict mode with the following settings:
+- `strict = true`
+- `warn_return_any = true`
+- `warn_unused_ignores = true`
+- `disallow_untyped_defs = true`
+- `ignore_missing_imports = true` (for third-party packages without stubs)
+
+## Pre-commit Hooks
+
+Run before each commit:
+1. black (formatting)
+2. isort (import sorting)
+3. flake8 (linting)
+4. pylint (code analysis)
+5. mypy (type checking)
+
+Execute with: `make lint` or `pre-commit run --all-files`
+
+## Error Handling Patterns
+
+```python
+# Good: Specific exception handling with typed returns
+def get_recipients(recipient_name: str, dltshr_workspace_url: str) -> RecipientInfo | None:
+    """Get recipient details by name."""
+    try:
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
+        w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
+        return w_client.recipients.get(name=recipient_name)
+    except Exception as e:
+        print(f"✗ Error retrieving recipient '{recipient_name}': {e}")
+        return None
+
+# Good: Error message returns for known failure cases
+def delete_share(share_name: str, dltshr_workspace_url: str) -> None | str:
+    """Delete a share permanently."""
+    try:
+        # ... deletion logic
+        return None
+    except Exception as ex:
+        error_msg = str(ex)
+        if "User is not an owner of Share" in error_msg:
+            return "User is not an owner of Share"
+        raise
+```
+
+## Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Modules | snake_case | `routes_share.py` |
+| Classes | PascalCase | `GetSharesResponse` |
+| Functions | snake_case | `list_shares_all` |
+| Constants | UPPER_SNAKE_CASE | `ROUTER_SHARE` |
+| Private | Leading underscore | `_update_env_file` |
+| Type Variables | Single uppercase | `T` |

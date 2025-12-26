@@ -1,0 +1,76 @@
+---
+description: DeltaShare Enterprise MVP - Project context, architecture, and domain overview
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# DeltaShare Enterprise Application
+
+## Project Purpose
+
+DeltaShare is an enterprise-grade application that enables data engineering teams to share Databricks assets (tables, views, streaming tables, streaming views, materialized views, and notebooks) with clients both internal and external to the enterprise. Clients may or may not have Databricks in their infrastructure.
+
+## Core Domain Concepts
+
+- **Share**: A named collection of Databricks data objects (tables, views, schemas) that can be shared with recipients
+- **Recipient**: An entity (internal or external) that receives access to shared data
+  - **D2D (Databricks-to-Databricks)**: Recipients with Databricks infrastructure using DATABRICKS authentication
+  - **D2O (Databricks-to-Open)**: Recipients without Databricks using TOKEN authentication
+- **Data Objects**: Tables, views, streaming tables, materialized views that can be added to shares
+- **Roles**: User roles for access control (to be defined - Admin, Data Owner, Data Consumer, etc.)
+
+## Technology Stack
+
+### Backend (Phase 1 - MVP)
+- **Python 3.12+**: Primary backend language
+- **FastAPI**: REST API framework
+- **Databricks SDK**: Delta Sharing operations
+- **SQLAlchemy 2.0**: PostgreSQL ORM (async)
+- **Alembic**: Database migrations
+- **Azure PostgreSQL**: Primary database
+- **Azure Web App**: Deployment platform
+- **Azure Queues**: Async job processing
+
+### Frontend (Phase 2)
+- **Next.js/React**: Frontend framework
+- **ShadCN UI**: Component library
+- **Tailwind CSS**: Styling
+
+## Environment Strategy
+
+| Environment | Purpose | Database | Databricks Workspace |
+|-------------|---------|----------|---------------------|
+| `dev` | Local development and feature testing | Local/Dev PostgreSQL | Dev workspace |
+| `uat` | User acceptance testing | UAT PostgreSQL | UAT workspace |
+| `prod` | Production deployment | Production PostgreSQL | Production workspace |
+
+Environment-specific configuration via:
+- `.env.dev`, `.env.uat`, `.env.prod` files (not committed)
+- Azure App Configuration for deployed environments
+- `ENVIRONMENT` variable to select configuration
+
+## Key Entry Points
+
+- `src/dbrx_api/main.py` - FastAPI application factory
+- `src/dbrx_api/settings.py` - Pydantic settings configuration
+- `src/dbrx_api/routes_*.py` - API route definitions
+- `src/dbrx_api/dltshr/` - Databricks Delta Sharing service layer
+- `tests/` - pytest test suite
+
+## Development Commands
+
+```bash
+make install      # Install dependencies
+make run-dev      # Start development server
+make test         # Run tests with coverage
+make lint         # Run all linters
+make build        # Build distribution package
+```
+
+## Code Organization Principles
+
+1. **Separation of Concerns**: Routes handle HTTP, services handle business logic
+2. **Dependency Injection**: Use FastAPI's dependency system for configuration and database
+3. **Type Safety**: All public functions must have type hints
+4. **Error Handling**: Consistent error responses via centralized exception handlers
+5. **Documentation**: All modules and public functions must have docstrings

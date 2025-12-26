@@ -1,0 +1,409 @@
+---
+description: Databricks Delta Sharing SDK patterns - authentication, WorkspaceClient, error handling
+globs: ["**/dltshr/**/*.py", "**/dbrx_auth/**/*.py", "**/services/**/*.py", "**/jobs/**/*.py"]
+alwaysApply: false
+---
+
+# Databricks Integration Patterns
+
+## Authentication
+
+### OAuth Token Generation
+
+```python
+# dbrx_auth/token_gen.py
+import base64
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Tuple
+
+import requests
+
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+ACCOUNT_ID = os.getenv("ACCOUNT_ID")
+
+
+def get_auth_token(exec_time_utc: datetime) -> Tuple[str, datetime]:
+    """
+    Generate OAuth token for Databricks API.
+
+    Args:
+        exec_time_utc: Current execution time in UTC
+
+    Returns:
+        Tuple of (access_token, expires_at_utc)
+
+    Raises:
+        CustomError: If token generation fails
+    """
+    # Check cached token first
+    cached_token = os.environ.get("DATABRICKS_TOKEN")
+    cached_expiry = os.environ.get("TOKEN_EXPIRES_AT_UTC")
+
+    if cached_token and cached_expiry:
+        expires_at_utc = datetime.fromisoformat(cached_expiry)
+        if expires_at_utc.tzinfo is None:
+            expires_at_utc = expires_at_utc.replace(tzinfo=timezone.utc)
+
+        # Use cached if > 5 minutes until expiry
+        if (expires_at_utc - exec_time_utc).total_seconds() > 300:
+            return cached_token, expires_at_utc
+
+    # Generate new token
+    url = f"https://accounts.azuredatabricks.net/oidc/accounts/{ACCOUNT_ID}/v1/token"
+    credentials = f"{CLIENT_ID}:{CLIENT_SECRET}"
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+    response = requests.post(
+        url,
+        headers={"Authorization": f"Basic {encoded_credentials}"},
+        data={"grant_type": "client_credentials", "scope": "all-apis"},
+        timeout=30,
+    )
+
+    if response.status_code != 200:
+        raise CustomError(f"Token request failed: {response.text}")
+
+    token_data = response.json()
+    access_token = token_data["access_token"]
+    expires_at_utc = datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 3600))
+
+    # Cache token
+    os.environ["DATABRICKS_TOKEN"] = access_token
+    os.environ["TOKEN_EXPIRES_AT_UTC"] = expires_at_utc.isoformat()
+
+    return access_token, expires_at_utc
+```
+
+### Token Caching Best Practices
+- Cache tokens in memory/environment for the request lifecycle
+- Refresh 5 minutes before expiry
+- Handle token refresh failures gracefully
+- Log token generation events for debugging
+
+## WorkspaceClient Usage
+
+### Standard Pattern
+```python
+from datetime import datetime, timezone
+
+from databricks.sdk import WorkspaceClient
+
+from dbrx_api.dbrx_auth.token_gen import get_auth_token
+
+
+def get_workspace_client(dltshr_workspace_url: str) -> WorkspaceClient:
+    """Create authenticated WorkspaceClient."""
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
+    return WorkspaceClient(host=dltshr_workspace_url, token=session_token)
+
+
+# Usage in service functions
+def get_shares(share_name: str, dltshr_workspace_url: str) -> ShareInfo | None:
+    """Get share details by name."""
+    try:
+        w_client = get_workspace_client(dltshr_workspace_url)
+        return w_client.shares.get(name=share_name)
+    except Exception as e:
+        print(f"✗ Error retrieving share '{share_name}': {e}")
+        return None
+```
+
+### Available SDK Services for Delta Sharing
+```python
+# Shares operations
+w_client.shares.create(name, comment, storage_root)
+w_client.shares.get(name)
+w_client.shares.list_shares(max_results)
+w_client.shares.update(name, updates)
+w_client.shares.delete(name)
+w_client.shares.share_permissions(name)
+w_client.shares.update_permissions(name, changes)
+
+# Recipients operations
+w_client.recipients.create(name, authentication_type, ...)
+w_client.recipients.get(name)
+w_client.recipients.list(max_results)
+w_client.recipients.update(name, ...)
+w_client.recipients.delete(name)
+w_client.recipients.rotate_token(name, existing_token_expire_in_seconds)
+```
+
+## Error Handling Patterns
+
+### SDK Error Classification
+```python
+def handle_databricks_error(error: Exception, operation: str, resource: str) -> str:
+    """
+    Convert Databricks SDK errors to user-friendly messages.
+
+    Args:
+        error: The caught exception
+        operation: What operation was attempted (create, delete, etc.)
+        resource: The resource type (share, recipient, etc.)
+
+    Returns:
+        User-friendly error message string
+    """
+    error_msg = str(error)
+    error_lower = error_msg.lower()
+
+    # Permission errors
+    if "PERMISSION_DENIED" in error_msg or "User is not an owner" in error_msg:
+        return f"Permission denied to {operation} {resource}. User is not the owner."
+
+    # Not found errors
+    if "RESOURCE_DOES_NOT_EXIST" in error_msg or "does not exist" in error_lower:
+        return f"{resource.capitalize()} not found."
+
+    # Already exists errors
+    if "RESOURCE_ALREADY_EXISTS" in error_msg or "already exists" in error_lower:
+        return f"{resource.capitalize()} already exists."
+
+    # Invalid parameter errors
+    if "INVALID_PARAMETER_VALUE" in error_msg or "invalid" in error_lower:
+        return f"Invalid parameter for {resource}: {error_msg}"
+
+    # Unknown error - re-raise for 500 handling
+    raise error
+```
+
+### Standard Error Handling in Service Functions
+```python
+def create_share(
+    dltshr_workspace_url: str,
+    share_name: str,
+    description: str,
+    storage_root: str | None = None,
+) -> ShareInfo | str:
+    """
+    Create a Delta Sharing share.
+
+    Returns:
+        ShareInfo on success, error message string on failure
+    """
+    w_client = get_workspace_client(dltshr_workspace_url)
+
+    try:
+        return w_client.shares.create(
+            name=share_name,
+            comment=description,
+            storage_root=storage_root,
+        )
+    except Exception as e:
+        err_msg = str(e)
+
+        if "already exists" in err_msg or "AlreadyExists" in err_msg:
+            return f"Share already exists with name '{share_name}'"
+        elif "PERMISSION_DENIED" in err_msg:
+            return "Permission denied. Caller must be a metastore admin or have CREATE_SHARE privilege."
+        elif "INVALID_PARAMETER_VALUE" in err_msg:
+            return f"Invalid parameter in share creation: {err_msg}"
+        elif "RESOURCE_DOES_NOT_EXIST" in err_msg:
+            return "Storage root location does not exist or is not accessible"
+        else:
+            # Unknown error - re-raise
+            raise
+```
+
+## Recipient Types
+
+### D2D (Databricks-to-Databricks)
+```python
+from databricks.sdk.service.sharing import AuthenticationType
+
+def create_recipient_d2d(
+    recipient_name: str,
+    recipient_identifier: str,  # Metastore ID: cloud:region:uuid
+    description: str,
+    dltshr_workspace_url: str,
+    sharing_code: str | None = None,
+) -> RecipientInfo | str:
+    """
+    Create D2D recipient using DATABRICKS authentication.
+
+    Note: D2D recipients do NOT support IP access lists.
+    """
+    w_client = get_workspace_client(dltshr_workspace_url)
+
+    try:
+        return w_client.recipients.create(
+            name=recipient_name,
+            data_recipient_global_metastore_id=recipient_identifier,
+            comment=description,
+            authentication_type=AuthenticationType.DATABRICKS,
+            sharing_code=sharing_code,
+        )
+    except Exception as e:
+        if "Cannot resolve target shard" in str(e):
+            return f"Invalid recipient_identifier. Please verify: {recipient_identifier}"
+        raise
+```
+
+### D2O (Databricks-to-Open)
+```python
+from databricks.sdk.service.sharing import AuthenticationType, IpAccessList
+
+def create_recipient_d2o(
+    recipient_name: str,
+    description: str,
+    dltshr_workspace_url: str,
+    ip_access_list: list[str] | None = None,
+) -> RecipientInfo:
+    """
+    Create D2O recipient using TOKEN authentication.
+
+    Returns RecipientInfo with activation URL and tokens.
+    """
+    w_client = get_workspace_client(dltshr_workspace_url)
+
+    ip_access = None
+    if ip_access_list:
+        cleaned_ips = [ip.strip() for ip in ip_access_list if ip.strip()]
+        if cleaned_ips:
+            ip_access = IpAccessList(allowed_ip_addresses=cleaned_ips)
+
+    return w_client.recipients.create(
+        name=recipient_name,
+        comment=description,
+        authentication_type=AuthenticationType.TOKEN,
+        ip_access_list=ip_access,
+    )
+```
+
+## Share Permissions
+
+### Adding Recipients to Share
+```python
+from databricks.sdk.service.sharing import PermissionsChange
+
+def add_recipient_to_share(
+    dltshr_workspace_url: str,
+    share_name: str,
+    recipient_name: str,
+) -> UpdateSharePermissionsResponse | str:
+    """Grant SELECT permission to a recipient."""
+    w_client = get_workspace_client(dltshr_workspace_url)
+
+    # Verify ownership before modification
+    share_info = w_client.shares.get(name=share_name)
+    current_user = w_client.current_user.me()
+
+    if share_info.owner != current_user.user_name:
+        return f"Permission denied. User is not owner of Share: {share_name}"
+
+    # Check if already has access
+    perms = w_client.shares.share_permissions(name=share_name)
+    for assignment in perms.privilege_assignments or []:
+        if assignment.principal == recipient_name:
+            return f"Recipient {recipient_name} already has access to share"
+
+    # Grant permission
+    return w_client.shares.update_permissions(
+        name=share_name,
+        changes=[PermissionsChange(principal=recipient_name, add=["SELECT"])],
+    )
+```
+
+## Data Object Management
+
+### Adding Objects to Share
+```python
+from databricks.sdk.service.sharing import (
+    SharedDataObject,
+    SharedDataObjectDataObjectType,
+    SharedDataObjectUpdate,
+    SharedDataObjectUpdateAction,
+)
+
+def add_data_objects_to_share(
+    dltshr_workspace_url: str,
+    share_name: str,
+    tables: list[str] = None,
+    views: list[str] = None,
+    schemas: list[str] = None,
+) -> ShareInfo | str:
+    """Add data objects (tables, views, schemas) to a share."""
+    w_client = get_workspace_client(dltshr_workspace_url)
+
+    updates = []
+
+    # Add tables
+    for table in tables or []:
+        updates.append(SharedDataObjectUpdate(
+            action=SharedDataObjectUpdateAction.ADD,
+            data_object=SharedDataObject(
+                name=table,
+                data_object_type=SharedDataObjectDataObjectType.TABLE,
+            ),
+        ))
+
+    # Add views
+    for view in views or []:
+        updates.append(SharedDataObjectUpdate(
+            action=SharedDataObjectUpdateAction.ADD,
+            data_object=SharedDataObject(
+                name=view,
+                data_object_type=SharedDataObjectDataObjectType.VIEW,
+            ),
+        ))
+
+    # Add schemas
+    for schema in schemas or []:
+        updates.append(SharedDataObjectUpdate(
+            action=SharedDataObjectUpdateAction.ADD,
+            data_object=SharedDataObject(
+                name=schema,
+                data_object_type=SharedDataObjectDataObjectType.SCHEMA,
+            ),
+        ))
+
+    if not updates:
+        return "No data objects provided to add"
+
+    return w_client.shares.update(name=share_name, updates=updates)
+```
+
+## DLT Jobs Integration (Future)
+
+### Job Trigger Pattern
+```python
+# jobs/dlt_sync.py
+from databricks.sdk.service.jobs import RunNow
+
+def trigger_table_sync_job(
+    dltshr_workspace_url: str,
+    job_id: int,
+    source_table: str,
+    target_share: str,
+) -> int:
+    """Trigger a DLT job for table synchronization."""
+    w_client = get_workspace_client(dltshr_workspace_url)
+
+    run = w_client.jobs.run_now(
+        job_id=job_id,
+        notebook_params={
+            "source_table": source_table,
+            "target_share": target_share,
+        },
+    )
+
+    return run.run_id
+```
+
+## Logging Conventions
+
+```python
+# Use consistent log prefixes
+print(f"✓ Share '{share_name}' created successfully")
+print(f"✗ Error creating share '{share_name}': {error}")
+print(f"⚠ Warning: Token expires soon, refreshing...")
+
+# For production, use structured logging
+import logging
+logger = logging.getLogger(__name__)
+
+logger.info("Share created", extra={"share_name": share_name, "owner": owner})
+logger.error("Share creation failed", extra={"share_name": share_name, "error": str(e)})
+```

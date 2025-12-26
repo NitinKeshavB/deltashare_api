@@ -1,0 +1,393 @@
+---
+description: SQLAlchemy 2.0 and Alembic patterns for Azure PostgreSQL database operations
+globs: ["**/models/**/*.py", "**/db/**/*.py", "**/migrations/**/*.py", "**/alembic/**/*.py"]
+alwaysApply: false
+---
+
+# Database Patterns - SQLAlchemy & Alembic
+
+## SQLAlchemy 2.0 Configuration
+
+### Async Engine Setup
+
+```python
+# db/session.py
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
+
+from dbrx_api.settings import Settings
+
+def get_database_url(settings: Settings) -> str:
+    """Construct Azure PostgreSQL connection URL."""
+    return (
+        f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}"
+        f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+        f"?ssl=require"  # Required for Azure PostgreSQL
+    )
+
+def create_async_engine_instance(settings: Settings):
+    """Create async SQLAlchemy engine."""
+    return create_async_engine(
+        get_database_url(settings),
+        echo=settings.db_echo,  # Log SQL in dev
+        poolclass=NullPool,  # Recommended for Azure
+        connect_args={
+            "server_settings": {"application_name": "deltashare_api"},
+        },
+    )
+
+def create_session_maker(engine) -> async_sessionmaker[AsyncSession]:
+    """Create async session factory."""
+    return async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+```
+
+### Settings Extension
+
+```python
+# settings.py
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    """Application settings with database configuration."""
+
+    # Databricks
+    dltshr_workspace_url: str
+
+    # Database
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "deltashare"
+    db_user: str = "deltashare_user"
+    db_password: str = ""
+    db_echo: bool = False  # SQL logging
+
+    # Environment
+    environment: str = "dev"  # dev, uat, prod
+
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+```
+
+## Model Base Class
+
+```python
+# models/base.py
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    """Base class for all SQLAlchemy models."""
+    pass
+
+
+class TimestampMixin:
+    """Mixin for created_at and updated_at timestamps."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        nullable=True,
+    )
+
+
+class AuditMixin(TimestampMixin):
+    """Mixin for audit fields."""
+
+    created_by: Mapped[Optional[str]] = mapped_column(nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(nullable=True)
+```
+
+## Model Definitions
+
+### User Model (Example)
+```python
+# models/user.py
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlalchemy import String, Boolean, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from dbrx_api.models.base import Base, AuditMixin
+
+if TYPE_CHECKING:
+    from dbrx_api.models.role import Role
+
+
+class User(Base, AuditMixin):
+    """User model for authentication and authorization."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255))
+    azure_oid: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Relationships
+    role_id: Mapped[Optional[int]] = mapped_column(ForeignKey("roles.id"), nullable=True)
+    role: Mapped[Optional["Role"]] = relationship("Role", back_populates="users")
+
+    def __repr__(self) -> str:
+        return f"<User(id={self.id}, email='{self.email}')>"
+```
+
+### Role Model (Example)
+```python
+# models/role.py
+from typing import TYPE_CHECKING, List
+
+from sqlalchemy import String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from dbrx_api.models.base import Base, AuditMixin
+
+if TYPE_CHECKING:
+    from dbrx_api.models.user import User
+
+
+class Role(Base, AuditMixin):
+    """Role model for role-based access control."""
+
+    __tablename__ = "roles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    permissions: Mapped[str] = mapped_column(Text, nullable=True)  # JSON string
+
+    # Relationships
+    users: Mapped[List["User"]] = relationship("User", back_populates="role")
+
+    def __repr__(self) -> str:
+        return f"<Role(id={self.id}, name='{self.name}')>"
+```
+
+### Audit Log Model
+```python
+# models/audit.py
+from datetime import datetime
+
+from sqlalchemy import String, Text, DateTime, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from dbrx_api.models.base import Base
+
+
+class AuditLog(Base):
+    """Audit log for tracking user actions."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
+    )
+    user_email: Mapped[str] = mapped_column(String(255), index=True)
+    action: Mapped[str] = mapped_column(String(100), index=True)
+    resource_type: Mapped[str] = mapped_column(String(100))  # share, recipient, user
+    resource_id: Mapped[str] = mapped_column(String(255))
+    details: Mapped[str] = mapped_column(Text, nullable=True)  # JSON details
+    ip_address: Mapped[str] = mapped_column(String(45), nullable=True)
+```
+
+## Repository Pattern
+
+```python
+# repositories/base.py
+from typing import Generic, TypeVar, Type, Optional, List
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from dbrx_api.models.base import Base
+
+ModelType = TypeVar("ModelType", bound=Base)
+
+
+class BaseRepository(Generic[ModelType]):
+    """Base repository with common CRUD operations."""
+
+    def __init__(self, model: Type[ModelType], session: AsyncSession):
+        self.model = model
+        self.session = session
+
+    async def get(self, id: int) -> Optional[ModelType]:
+        """Get a single record by ID."""
+        return await self.session.get(self.model, id)
+
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[ModelType]:
+        """Get all records with pagination."""
+        result = await self.session.execute(
+            select(self.model).offset(skip).limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def create(self, obj: ModelType) -> ModelType:
+        """Create a new record."""
+        self.session.add(obj)
+        await self.session.flush()
+        await self.session.refresh(obj)
+        return obj
+
+    async def delete(self, obj: ModelType) -> None:
+        """Delete a record."""
+        await self.session.delete(obj)
+```
+
+## Alembic Configuration
+
+### Initialize Alembic
+```bash
+cd backend
+alembic init alembic
+```
+
+### alembic.ini Configuration
+```ini
+# alembic.ini
+[alembic]
+script_location = alembic
+prepend_sys_path = .
+version_path_separator = os
+
+# Use env variable for database URL
+sqlalchemy.url =
+
+[post_write_hooks]
+hooks = black
+black.type = console_scripts
+black.entrypoint = black
+black.options = -l 119 REVISION_SCRIPT_FILENAME
+```
+
+### env.py Configuration
+```python
+# alembic/env.py
+import asyncio
+from logging.config import fileConfig
+
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
+from alembic import context
+
+from dbrx_api.models.base import Base
+from dbrx_api.settings import Settings
+
+# Import all models for autogenerate
+from dbrx_api.models import user, role, audit  # noqa
+
+config = context.config
+settings = Settings()
+
+# Set database URL from settings
+config.set_main_option("sqlalchemy.url", settings.database_url)
+
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+
+def run_migrations_offline() -> None:
+    """Run migrations in 'offline' mode."""
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def do_run_migrations(connection: Connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_async_migrations() -> None:
+    """Run migrations in 'online' mode with async engine."""
+    connectable = async_engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+    await connectable.dispose()
+
+
+def run_migrations_online() -> None:
+    """Run migrations in 'online' mode."""
+    asyncio.run(run_async_migrations())
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+```
+
+### Migration Commands
+```bash
+# Generate migration from model changes
+alembic revision --autogenerate -m "add users and roles tables"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback one migration
+alembic downgrade -1
+
+# Show current revision
+alembic current
+
+# Show migration history
+alembic history
+```
+
+## Azure PostgreSQL Considerations
+
+### Connection String Format
+```
+postgresql+asyncpg://user:password@server.postgres.database.azure.com:5432/dbname?ssl=require
+```
+
+### Required Settings
+- SSL mode: `require` (Azure mandates SSL)
+- Connection pooling: Use `NullPool` or configure for Azure's limits
+- Application name: Set for monitoring in Azure
+
+### Environment-Specific Databases
+| Environment | Database Name | Host |
+|-------------|---------------|------|
+| dev | deltashare_dev | local or Azure dev |
+| uat | deltashare_uat | Azure UAT server |
+| prod | deltashare_prod | Azure Prod server |

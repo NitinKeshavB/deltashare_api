@@ -1,0 +1,386 @@
+---
+description: Testing standards with pytest - conventions, fixtures, coverage, and mocking patterns
+globs: ["**/tests/**/*.py", "**/conftest.py", "**/test_*.py", "**/*_test.py"]
+alwaysApply: false
+---
+
+# Testing Standards - pytest
+
+## Directory Structure
+
+```
+tests/
+  __init__.py
+  conftest.py              # Shared fixtures and pytest configuration
+  consts.py                # Test constants
+  fixtures/                # Fixture modules
+    __init__.py
+    example_fixture.py
+    db_fixtures.py         # Database fixtures
+    api_fixtures.py        # API client fixtures
+    mock_fixtures.py       # Databricks mock fixtures
+  unit_tests/              # Unit tests
+    __init__.py
+    test_shares.py
+    test_recipients.py
+    test_services.py
+  integration_tests/       # Integration tests
+    __init__.py
+    test_api_shares.py
+    test_api_recipients.py
+    test_database.py
+```
+
+## conftest.py Configuration
+
+```python
+# tests/conftest.py
+"""
+Register pytest plugins, fixtures, and hooks for test execution.
+"""
+
+import sys
+from pathlib import Path
+
+THIS_DIR = Path(__file__).parent
+TESTS_DIR_PARENT = (THIS_DIR / "..").resolve()
+
+# Add parent directory to PYTHONPATH for imports
+sys.path.insert(0, str(TESTS_DIR_PARENT))
+
+# Register fixture modules
+pytest_plugins = [
+    "tests.fixtures.example_fixture",
+    "tests.fixtures.db_fixtures",
+    "tests.fixtures.api_fixtures",
+    "tests.fixtures.mock_fixtures",
+]
+```
+
+## pytest Configuration (pyproject.toml)
+
+```toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+```
+
+## Test Naming Conventions
+
+```python
+# File naming: test_<module>.py or <module>_test.py
+# tests/unit_tests/test_shares.py
+
+# Function naming: test__<function>__<scenario>
+def test__get_shares__returns_share_info_when_exists():
+    """Test that get_shares returns ShareInfo for existing share."""
+    ...
+
+def test__get_shares__returns_none_when_not_found():
+    """Test that get_shares returns None for non-existent share."""
+    ...
+
+def test__create_share__raises_on_invalid_name():
+    """Test that create_share raises for invalid share names."""
+    ...
+
+# Class-based tests for grouped scenarios
+class TestShareCreation:
+    """Tests for share creation functionality."""
+
+    def test_creates_share_with_valid_name(self):
+        ...
+
+    def test_returns_error_for_duplicate_name(self):
+        ...
+
+    def test_validates_storage_root(self):
+        ...
+```
+
+## Fixtures
+
+### Basic Fixtures
+```python
+# tests/fixtures/example_fixture.py
+import pytest
+from dbrx_api.settings import Settings
+
+@pytest.fixture
+def test_settings() -> Settings:
+    """Provide test settings with mock values."""
+    return Settings(
+        dltshr_workspace_url="https://test.azuredatabricks.net/",
+    )
+
+@pytest.fixture
+def sample_share_name() -> str:
+    """Provide a sample share name for tests."""
+    return "test_share_123"
+```
+
+### FastAPI Test Client Fixture
+```python
+# tests/fixtures/api_fixtures.py
+import pytest
+from fastapi.testclient import TestClient
+
+from dbrx_api.main import create_app
+from dbrx_api.settings import Settings
+
+@pytest.fixture
+def test_app(test_settings: Settings):
+    """Create FastAPI app with test settings."""
+    return create_app(settings=test_settings)
+
+@pytest.fixture
+def client(test_app) -> TestClient:
+    """Provide TestClient for API testing."""
+    with TestClient(test_app) as c:
+        yield c
+```
+
+### Async Database Fixtures
+```python
+# tests/fixtures/db_fixtures.py
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from dbrx_api.models.base import Base
+
+@pytest.fixture(scope="session")
+def test_database_url():
+    """Test database URL (use SQLite for unit tests)."""
+    return "sqlite+aiosqlite:///:memory:"
+
+@pytest.fixture(scope="session")
+async def test_engine(test_database_url):
+    """Create test database engine."""
+    engine = create_async_engine(
+        test_database_url,
+        echo=False,
+        poolclass=NullPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+@pytest.fixture
+async def db_session(test_engine) -> AsyncSession:
+    """Provide database session for each test."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    session_maker = async_sessionmaker(
+        bind=test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_maker() as session:
+        yield session
+        await session.rollback()
+```
+
+## Mocking Databricks SDK
+
+```python
+# tests/fixtures/mock_fixtures.py
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+
+@pytest.fixture
+def mock_workspace_client():
+    """Mock Databricks WorkspaceClient."""
+    with patch("dbrx_api.dltshr.share.WorkspaceClient") as mock:
+        client = MagicMock()
+        mock.return_value = client
+        yield client
+
+@pytest.fixture
+def mock_auth_token():
+    """Mock authentication token generation."""
+    with patch("dbrx_api.dltshr.share.get_auth_token") as mock:
+        mock.return_value = ("mock_token_123", None)
+        yield mock
+
+@pytest.fixture
+def mock_share_info():
+    """Provide mock ShareInfo object."""
+    from databricks.sdk.service.sharing import ShareInfo
+    return ShareInfo(
+        name="test_share",
+        owner="test_user@example.com",
+        comment="Test share description",
+    )
+```
+
+### Using Mocks in Tests
+```python
+# tests/unit_tests/test_shares.py
+
+def test__get_shares__returns_share_info(
+    mock_workspace_client,
+    mock_auth_token,
+    mock_share_info,
+):
+    """Test that get_shares returns ShareInfo when share exists."""
+    # Arrange
+    mock_workspace_client.shares.get.return_value = mock_share_info
+
+    # Act
+    from dbrx_api.dltshr.share import get_shares
+    result = get_shares("test_share", "https://test.databricks.net/")
+
+    # Assert
+    assert result is not None
+    assert result.name == "test_share"
+    mock_workspace_client.shares.get.assert_called_once_with(name="test_share")
+
+
+def test__get_shares__returns_none_when_not_found(
+    mock_workspace_client,
+    mock_auth_token,
+):
+    """Test that get_shares returns None when share doesn't exist."""
+    # Arrange
+    mock_workspace_client.shares.get.side_effect = Exception("Share not found")
+
+    # Act
+    from dbrx_api.dltshr.share import get_shares
+    result = get_shares("nonexistent", "https://test.databricks.net/")
+
+    # Assert
+    assert result is None
+```
+
+## API Integration Tests
+
+```python
+# tests/integration_tests/test_api_shares.py
+import pytest
+from fastapi import status
+
+class TestSharesAPI:
+    """Integration tests for Shares API endpoints."""
+
+    def test_list_shares_returns_200(self, client, mock_workspace_client, mock_auth_token):
+        """Test GET /shares returns 200 with share list."""
+        # Arrange
+        mock_workspace_client.shares.list_shares.return_value = []
+
+        # Act
+        response = client.get("/shares")
+
+        # Assert
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_get_share_returns_404_when_not_found(
+        self, client, mock_workspace_client, mock_auth_token
+    ):
+        """Test GET /shares/{name} returns 404 for non-existent share."""
+        # Arrange
+        mock_workspace_client.shares.get.side_effect = Exception("not found")
+
+        # Act
+        response = client.get("/shares/nonexistent")
+
+        # Assert
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+```
+
+## Coverage Configuration
+
+### Minimum Coverage: 80% (target)
+Current minimum: 0% (MVP phase, to be increased)
+
+### Running Tests with Coverage
+```bash
+# Run all tests with coverage
+make test
+
+# Run quick tests (exclude slow)
+make test-quick
+
+# Run with verbose output
+pytest -v --cov=src/dbrx_api --cov-report=term-missing
+
+# Generate HTML coverage report
+pytest --cov=src/dbrx_api --cov-report=html
+make serve-coverage-report
+```
+
+### Coverage Report Location
+```
+test-reports/
+  htmlcov/           # HTML coverage report
+  coverage.xml       # XML for CI integration
+  report.xml         # JUnit XML report
+```
+
+## Test Markers
+
+```python
+import pytest
+
+@pytest.mark.slow
+def test__complex_integration__takes_long_time():
+    """This test is slow and can be skipped with -m 'not slow'."""
+    ...
+
+@pytest.mark.integration
+def test__api_endpoint__requires_database():
+    """Integration test requiring database."""
+    ...
+
+@pytest.mark.unit
+def test__pure_function__no_dependencies():
+    """Pure unit test with no external dependencies."""
+    ...
+```
+
+### Running Specific Test Types
+```bash
+# Run only unit tests
+pytest -m unit
+
+# Run only integration tests
+pytest -m integration
+
+# Exclude slow tests
+pytest -m "not slow"
+
+# Run specific test file
+pytest tests/unit_tests/test_shares.py
+
+# Run specific test function
+pytest tests/unit_tests/test_shares.py::test__get_shares__returns_share_info
+```
+
+## Assertions Best Practices
+
+```python
+# Good: Specific assertions with clear messages
+def test__create_share__validates_name():
+    result = validate_share_name("invalid name with spaces")
+    assert result is False, "Share names with spaces should be invalid"
+
+# Good: Use pytest.raises for exceptions
+def test__create_share__raises_on_empty_name():
+    with pytest.raises(ValueError, match="Share name cannot be empty"):
+        create_share(share_name="", description="test")
+
+# Good: Compare complex objects
+def test__list_shares__returns_expected_structure():
+    result = list_shares()
+    assert isinstance(result, list)
+    assert all(hasattr(s, "name") for s in result)
+```

@@ -1,0 +1,285 @@
+---
+description: FastAPI design patterns - routes, dependency injection, error handling, and API conventions
+globs: ["**/routes*.py", "**/main.py", "**/schemas.py", "**/errors.py", "**/api/**/*.py"]
+alwaysApply: false
+---
+
+# FastAPI Patterns and Conventions
+
+## Application Factory Pattern
+
+Use the app factory pattern for testability and configuration flexibility:
+
+```python
+from fastapi import FastAPI
+from dbrx_api.settings import Settings
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Create a FastAPI application."""
+    settings = settings or Settings()
+
+    app = FastAPI(
+        title="Delta Share API",
+        summary="API for managing Delta Share recipients and shares.",
+        version="v1",
+        docs_url="/",
+        generate_unique_id_function=custom_generate_unique_id,
+    )
+
+    # Store settings in app state for access in routes
+    app.state.settings = settings
+
+    # Include routers
+    app.include_router(ROUTER_SHARE)
+    app.include_router(ROUTER_RECIPIENT)
+
+    # Register exception handlers
+    app.add_exception_handler(
+        exc_class_or_status_code=pydantic.ValidationError,
+        handler=handle_pydantic_validation_errors,
+    )
+    app.middleware("http")(handle_broad_exceptions)
+
+    return app
+```
+
+## Router Organization
+
+Organize routers by domain, one router per resource type:
+
+```python
+from fastapi import APIRouter
+
+# Create router with consistent tag
+ROUTER_SHARE = APIRouter(tags=["Shares"])
+ROUTER_RECIPIENT = APIRouter(tags=["Recipients"])
+ROUTER_USER = APIRouter(tags=["Users"])  # Phase 2
+ROUTER_ROLE = APIRouter(tags=["Roles"])  # Phase 2
+```
+
+### Route Naming Convention
+
+| HTTP Method | Route Pattern | Function Name |
+|-------------|---------------|---------------|
+| GET | `/shares` | `list_shares_all` |
+| GET | `/shares/{share_name}` | `get_shares_by_name` |
+| POST | `/shares/{share_name}` | `create_share` |
+| PUT | `/shares/{share_name}/...` | `update_share_...` |
+| DELETE | `/shares/{share_name}` | `delete_share_by_name` |
+
+## Dependency Injection
+
+### Settings Access
+Access settings via request.app.state:
+
+```python
+from fastapi import Request
+from dbrx_api.settings import Settings
+
+@ROUTER_SHARE.get("/shares/{share_name}")
+async def get_shares_by_name(request: Request, share_name: str) -> ShareInfo:
+    """Retrieve share by name."""
+    settings: Settings = request.app.state.settings
+    share = get_shares(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+    ...
+```
+
+### Query Parameters with Pydantic
+Use Pydantic models with Depends for query validation:
+
+```python
+from fastapi import Depends
+from pydantic import BaseModel, field_validator
+
+class GetSharesQueryParams(BaseModel):
+    """Query parameters for listing shares."""
+    prefix: Optional[str] = None
+    page_size: Optional[int] = 100
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError("page_size must be greater than 0")
+        return v
+
+@ROUTER_SHARE.get("/shares")
+async def list_shares(
+    request: Request,
+    response: Response,
+    query_params: GetSharesQueryParams = Depends()
+):
+    ...
+```
+
+### Database Session Dependency (Phase 2)
+```python
+from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Provide database session for request."""
+    async with async_session_maker() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+@ROUTER_USER.get("/users/{user_id}")
+async def get_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db_session)
+) -> UserResponse:
+    ...
+```
+
+## Response Documentation
+
+Document all response status codes in route decorator:
+
+```python
+@ROUTER_SHARE.delete(
+    "/shares/{share_name}",
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Deleted Share successfully!",
+            "content": {"application/json": {"example": {"detail": "Deleted Share successfully!"}}},
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Share not found",
+            "content": {"application/json": {"example": {"detail": "Share not found"}}},
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Permission denied - user is not the owner",
+            "content": {"application/json": {"example": {"detail": "Permission denied"}}},
+        },
+    },
+)
+async def delete_share_by_name(request: Request, share_name: str):
+    ...
+```
+
+## Error Handling
+
+### Centralized Exception Handlers
+
+```python
+# errors.py
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
+
+async def handle_broad_exceptions(request: Request, call_next):
+    """Handle any unhandled exception."""
+    try:
+        return await call_next(request)
+    except Exception:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"},
+        )
+
+async def handle_pydantic_validation_errors(
+    request: Request,
+    exc: pydantic.ValidationError
+) -> JSONResponse:
+    """Handle Pydantic validation errors."""
+    errors = exc.errors()
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": [
+                {"msg": error["msg"], "input": error["input"]}
+                for error in errors
+            ]
+        },
+    )
+```
+
+### Route-Level Error Handling
+
+Map service layer error strings to HTTP exceptions:
+
+```python
+@ROUTER_SHARE.put("/shares/{share_name}/dataobject/add")
+async def add_data_objects_to_share(...) -> ShareInfo:
+    result = add_data_object_to_share(...)
+
+    # Handle error responses (string messages from service)
+    if isinstance(result, str):
+        if "already exists" in result:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result)
+        elif "Permission denied" in result:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=result)
+        elif "not found" in result or "does not exist" in result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result)
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result)
+
+    return result
+```
+
+## Pydantic Schemas
+
+### Request/Response Models
+Place in `schemas/` directory, organized by domain:
+
+```python
+# schemas/share.py
+from pydantic import BaseModel
+from typing import List, Optional
+
+class AddDataObjectsRequest(BaseModel):
+    """Request model for adding data objects to a share."""
+    tables: Optional[List[str]] = []
+    views: Optional[List[str]] = []
+    schemas: Optional[List[str]] = []
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "tables": ["catalog.schema.table1"],
+                "views": ["catalog.schema.view1"],
+                "schemas": ["catalog.schema"],
+            }
+        }
+
+class GetSharesResponse(BaseModel):
+    """Response model for listing shares."""
+    Message: str
+    Share: List[ShareInfo]
+```
+
+### Response Field Naming
+- Use PascalCase for response fields visible to API consumers: `Message`, `Share`, `Recipient`
+- Use snake_case for internal fields and request bodies
+
+## Status Code Guidelines
+
+| Scenario | Status Code |
+|----------|-------------|
+| Success with body | 200 OK |
+| Resource created | 201 Created |
+| No content | 204 No Content |
+| Invalid request | 400 Bad Request |
+| Unauthorized | 401 Unauthorized |
+| Permission denied | 403 Forbidden |
+| Not found | 404 Not Found |
+| Conflict (duplicate) | 409 Conflict |
+| Validation error | 422 Unprocessable Entity |
+| Server error | 500 Internal Server Error |
+
+## OpenAPI Customization
+
+Generate clean operation IDs for SDK generation:
+
+```python
+from fastapi.routing import APIRoute
+
+def custom_generate_unique_id(route: APIRoute) -> str:
+    """Generate prettier operationIds in the OpenAPI schema."""
+    if route.tags:
+        return f"{route.tags[0]}-{route.name}"
+    return route.name
+```

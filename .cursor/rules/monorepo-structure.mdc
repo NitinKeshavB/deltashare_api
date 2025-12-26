@@ -1,0 +1,286 @@
+---
+description: Monorepo structure for backend (Phase 1) and frontend (Phase 2) organization
+globs: ["**/*"]
+alwaysApply: false
+---
+
+# Monorepo Structure
+
+## Current Phase 1 Structure (Backend MVP)
+
+```
+deltashare_api/
+├── .cursor/
+│   └── rules/                    # Cursor AI rules
+│       ├── project-overview.mdc
+│       ├── python-standards.mdc
+│       ├── fastapi-patterns.mdc
+│       ├── database-patterns.mdc
+│       ├── testing-standards.mdc
+│       ├── azure-deployment.mdc
+│       ├── databricks-integration.mdc
+│       └── monorepo-structure.mdc
+├── src/
+│   └── dbrx_api/                 # Main Python package
+│       ├── __init__.py
+│       ├── main.py               # FastAPI app factory
+│       ├── settings.py           # Pydantic settings
+│       ├── errors.py             # Exception handlers
+│       ├── schemas.py            # Pydantic models (to be split)
+│       ├── routes_share.py       # Share endpoints
+│       ├── routes_recipient.py   # Recipient endpoints
+│       ├── dbrx_auth/            # Databricks authentication
+│       │   ├── __init__.py
+│       │   └── token_gen.py
+│       ├── dltshr/               # Delta Sharing services
+│       │   ├── recipient.py
+│       │   └── share.py
+│       └── jobs/                 # DLT job handlers (future)
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── consts.py
+│   ├── fixtures/
+│   │   └── example_fixture.py
+│   └── unit_tests/
+│       └── test__example.py
+├── scripts_notebooks/            # Development notebooks
+├── .env                          # Local environment (not committed)
+├── .env.example                  # Environment template
+├── .gitignore
+├── .pre-commit-config.yaml
+├── Makefile
+├── pyproject.toml
+├── README.md
+├── run.sh
+└── version.txt
+```
+
+## Target Phase 2 Structure (With Frontend)
+
+```
+deltashare/                       # Repository root (renamed)
+├── .cursor/
+│   └── rules/                    # Shared Cursor rules
+├── .github/
+│   └── workflows/                # CI/CD pipelines
+│       ├── backend-ci.yml
+│       ├── frontend-ci.yml
+│       └── deploy.yml
+├── backend/                      # Python FastAPI backend
+│   ├── src/
+│   │   └── dbrx_api/
+│   │       ├── api/              # API routes (organized)
+│   │       │   ├── __init__.py
+│   │       │   ├── routes_share.py
+│   │       │   ├── routes_recipient.py
+│   │       │   ├── routes_user.py
+│   │       │   └── routes_role.py
+│   │       ├── models/           # SQLAlchemy models
+│   │       │   ├── __init__.py
+│   │       │   ├── base.py
+│   │       │   ├── user.py
+│   │       │   ├── role.py
+│   │       │   └── audit.py
+│   │       ├── schemas/          # Pydantic schemas
+│   │       │   ├── __init__.py
+│   │       │   ├── share.py
+│   │       │   ├── recipient.py
+│   │       │   ├── user.py
+│   │       │   └── common.py
+│   │       ├── services/         # Business logic
+│   │       │   ├── share.py
+│   │       │   ├── recipient.py
+│   │       │   └── user.py
+│   │       ├── db/               # Database utilities
+│   │       │   ├── __init__.py
+│   │       │   ├── session.py
+│   │       │   └── repositories/
+│   │       ├── auth/             # Authentication
+│   │       │   ├── databricks.py
+│   │       │   └── azure_ad.py
+│   │       ├── main.py
+│   │       ├── settings.py
+│   │       └── errors.py
+│   ├── tests/
+│   ├── alembic/                  # Database migrations
+│   ├── alembic.ini
+│   ├── pyproject.toml
+│   ├── Makefile
+│   └── requirements.txt
+├── frontend/                     # Next.js React frontend
+│   ├── src/
+│   │   ├── app/                  # Next.js 14 App Router
+│   │   │   ├── layout.tsx
+│   │   │   ├── page.tsx
+│   │   │   ├── shares/
+│   │   │   ├── recipients/
+│   │   │   └── settings/
+│   │   ├── components/           # React components
+│   │   │   ├── ui/               # ShadCN UI components
+│   │   │   ├── shares/
+│   │   │   └── recipients/
+│   │   ├── lib/                  # Utilities
+│   │   │   ├── api.ts            # API client
+│   │   │   └── utils.ts
+│   │   └── types/                # TypeScript types
+│   ├── public/
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── tailwind.config.ts
+│   └── next.config.js
+├── shared/                       # Shared configurations
+│   ├── openapi/                  # Generated OpenAPI specs
+│   │   └── openapi.json
+│   └── types/                    # Shared type definitions
+├── docker-compose.yml            # Local development
+├── docker-compose.prod.yml       # Production compose
+├── README.md
+└── Makefile                      # Root-level commands
+```
+
+## Migration Path (Phase 1 to Phase 2)
+
+### Step 1: Prepare Backend Structure
+```bash
+# Create backend directory and move current src/
+mkdir -p backend
+mv src/ backend/
+mv tests/ backend/
+mv pyproject.toml backend/
+mv Makefile backend/
+mv run.sh backend/
+mv alembic.ini backend/  # When added
+```
+
+### Step 2: Update Import Paths
+```python
+# Before (Phase 1)
+from dbrx_api.main import create_app
+from dbrx_api.settings import Settings
+
+# After (Phase 2) - same, pyproject.toml handles it
+from dbrx_api.main import create_app
+from dbrx_api.settings import Settings
+```
+
+### Step 3: Initialize Frontend
+```bash
+# Create Next.js app with TypeScript, Tailwind, and App Router
+cd deltashare
+npx create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir
+
+# Add ShadCN UI
+cd frontend
+npx shadcn-ui@latest init
+```
+
+### Step 4: Root Makefile
+```makefile
+# Root Makefile for monorepo commands
+.PHONY: install-backend install-frontend install-all
+
+install-all: install-backend install-frontend
+
+install-backend:
+	cd backend && make install
+
+install-frontend:
+	cd frontend && npm install
+
+run-backend:
+	cd backend && make run-dev
+
+run-frontend:
+	cd frontend && npm run dev
+
+test-all:
+	cd backend && make test
+	cd frontend && npm test
+
+lint-all:
+	cd backend && make lint
+	cd frontend && npm run lint
+```
+
+## Package Organization Guidelines
+
+### Backend Packages
+
+| Package | Purpose |
+|---------|---------|
+| `api/` | FastAPI routers and endpoint definitions |
+| `models/` | SQLAlchemy ORM models |
+| `schemas/` | Pydantic request/response models |
+| `services/` | Business logic (Delta Sharing operations) |
+| `db/` | Database session, repositories, migrations |
+| `auth/` | Authentication (Databricks, Azure AD) |
+
+### Frontend Directories (Phase 2)
+
+| Directory | Purpose |
+|-----------|---------|
+| `app/` | Next.js App Router pages and layouts |
+| `components/` | React components (UI, feature-specific) |
+| `lib/` | Utilities, API client, helpers |
+| `types/` | TypeScript type definitions |
+| `hooks/` | Custom React hooks |
+
+## Shared Configuration
+
+### OpenAPI Schema Generation
+```python
+# Generate OpenAPI JSON for frontend type generation
+import json
+from dbrx_api.main import create_app
+
+app = create_app()
+with open("../shared/openapi/openapi.json", "w") as f:
+    json.dump(app.openapi(), f, indent=2)
+```
+
+### Frontend API Client Generation
+```bash
+# Generate TypeScript client from OpenAPI
+cd frontend
+npx openapi-typescript ../shared/openapi/openapi.json -o src/types/api.d.ts
+```
+
+## CI/CD Considerations
+
+### Separate Pipelines
+- **Backend CI**: Python tests, lint, type check
+- **Frontend CI**: TypeScript build, lint, tests
+- **Deploy**: Coordinate both deployments
+
+### Change Detection
+```yaml
+# .github/workflows/backend-ci.yml
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+```
+
+## Environment Variables
+
+### Backend (.env)
+```bash
+# Backend-specific
+ENVIRONMENT=dev
+DLTSHR_WORKSPACE_URL=https://...
+DB_HOST=localhost
+```
+
+### Frontend (.env.local)
+```bash
+# Frontend-specific
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_ENV=development
+```
+
+### Shared Secrets (Azure)
+- Store in Azure Key Vault
+- Reference in Azure App Configuration
+- Both apps access via managed identity

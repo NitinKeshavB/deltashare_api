@@ -1,0 +1,398 @@
+---
+description: Azure deployment patterns - Web App, Queues, environment configuration, and CI/CD
+globs: ["**/deploy/**/*", "**/azure/**/*", "**/.github/**/*", "**/settings.py"]
+alwaysApply: false
+---
+
+# Azure Deployment Patterns
+
+## Azure Service Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Azure Resource Group                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │  Azure Web   │    │   Azure      │    │   Azure      │       │
+│  │  App (API)   │───▶│  PostgreSQL  │    │   Queue      │       │
+│  └──────────────┘    └──────────────┘    └──────────────┘       │
+│         │                                       │                │
+│         │            ┌──────────────┐           │                │
+│         └───────────▶│  Azure App   │◀──────────┘                │
+│                      │  Config      │                            │
+│                      └──────────────┘                            │
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐                           │
+│  │  Azure Key   │    │  Databricks  │                           │
+│  │  Vault       │    │  Workspace   │                           │
+│  └──────────────┘    └──────────────┘                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Environment Configuration
+
+### Environment Variables Structure
+
+```python
+# settings.py
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment."""
+
+    # Environment
+    environment: str = "dev"  # dev, uat, prod
+    debug: bool = False
+
+    # Databricks
+    dltshr_workspace_url: str
+    client_id: str = ""
+    client_secret: str = ""
+    account_id: str = ""
+
+    # Database (Azure PostgreSQL)
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "deltashare"
+    db_user: str = ""
+    db_password: str = ""
+    db_ssl_mode: str = "require"
+
+    # Azure Queue Storage
+    azure_queue_connection_string: str = ""
+    azure_queue_name: str = "deltashare-jobs"
+
+    # Azure App Configuration
+    azure_app_config_endpoint: str = ""
+
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+```
+
+### Environment Files
+
+```bash
+# .env.dev - Local development (not committed)
+ENVIRONMENT=dev
+DEBUG=true
+DLTSHR_WORKSPACE_URL=https://adb-dev.azuredatabricks.net/
+DB_HOST=localhost
+DB_NAME=deltashare_dev
+
+# .env.uat - UAT environment (not committed)
+ENVIRONMENT=uat
+DEBUG=false
+DLTSHR_WORKSPACE_URL=https://adb-uat.azuredatabricks.net/
+DB_HOST=deltashare-uat.postgres.database.azure.com
+
+# .env.prod - Production (not committed)
+ENVIRONMENT=prod
+DEBUG=false
+DLTSHR_WORKSPACE_URL=https://adb-prod.azuredatabricks.net/
+DB_HOST=deltashare-prod.postgres.database.azure.com
+```
+
+### Environment Selection
+```python
+import os
+from dotenv import load_dotenv
+
+def load_environment():
+    """Load environment-specific configuration."""
+    env = os.getenv("ENVIRONMENT", "dev")
+    env_file = f".env.{env}"
+
+    if os.path.exists(env_file):
+        load_dotenv(env_file)
+    else:
+        load_dotenv(".env")  # Fallback
+```
+
+## Azure Web App Configuration
+
+### Application Settings (Azure Portal / ARM)
+
+| Setting | Dev | UAT | Prod |
+|---------|-----|-----|------|
+| `ENVIRONMENT` | dev | uat | prod |
+| `DEBUG` | true | false | false |
+| `WEBSITES_PORT` | 8000 | 8000 | 8000 |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | true | true | true |
+
+### Startup Command
+```bash
+# For Azure Web App startup
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker src.dbrx_api.main:create_app --bind 0.0.0.0:8000
+```
+
+### requirements.txt for Deployment
+```txt
+# requirements.txt (generated from pyproject.toml)
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+gunicorn>=21.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.28.0
+alembic>=1.12.0
+databricks-sdk>=0.12.0
+azure-storage-queue>=12.0.0
+azure-identity>=1.14.0
+python-dotenv>=1.0.0
+```
+
+## Azure Queue Integration
+
+### Queue Client Setup
+```python
+# services/queue_client.py
+from azure.storage.queue import QueueClient
+from azure.identity import DefaultAzureCredential
+
+from dbrx_api.settings import Settings
+
+def get_queue_client(settings: Settings) -> QueueClient:
+    """Create Azure Queue client."""
+    if settings.azure_queue_connection_string:
+        return QueueClient.from_connection_string(
+            settings.azure_queue_connection_string,
+            queue_name=settings.azure_queue_name,
+        )
+    else:
+        # Use managed identity in Azure
+        credential = DefaultAzureCredential()
+        return QueueClient(
+            account_url=f"https://{settings.azure_storage_account}.queue.core.windows.net",
+            queue_name=settings.azure_queue_name,
+            credential=credential,
+        )
+```
+
+### Queue Message Patterns
+```python
+# services/job_queue.py
+import json
+from datetime import datetime
+from typing import Any, Dict
+
+from azure.storage.queue import QueueClient
+
+class JobQueue:
+    """Queue for async job processing."""
+
+    def __init__(self, queue_client: QueueClient):
+        self.client = queue_client
+
+    async def enqueue_job(
+        self,
+        job_type: str,
+        payload: Dict[str, Any],
+        visibility_timeout: int = 0,
+    ) -> str:
+        """Add job to queue."""
+        message = {
+            "job_type": job_type,
+            "payload": payload,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        result = self.client.send_message(
+            json.dumps(message),
+            visibility_timeout=visibility_timeout,
+        )
+        return result.id
+
+    async def dequeue_job(self, visibility_timeout: int = 30):
+        """Get next job from queue."""
+        messages = self.client.receive_messages(
+            max_messages=1,
+            visibility_timeout=visibility_timeout,
+        )
+        for msg in messages:
+            return json.loads(msg.content), msg
+        return None, None
+
+    async def complete_job(self, message):
+        """Remove completed job from queue."""
+        self.client.delete_message(message)
+```
+
+### Job Types
+```python
+# Job type constants
+JOB_TYPE_SYNC_TABLE = "sync_table"
+JOB_TYPE_CREATE_SHARE = "create_share"
+JOB_TYPE_NOTIFY_RECIPIENT = "notify_recipient"
+JOB_TYPE_AUDIT_CLEANUP = "audit_cleanup"
+```
+
+## Service Principal Authentication
+
+### Azure AD App Registration
+```python
+# auth/azure_auth.py
+from azure.identity import (
+    DefaultAzureCredential,
+    ClientSecretCredential,
+    ManagedIdentityCredential,
+)
+
+from dbrx_api.settings import Settings
+
+def get_azure_credential(settings: Settings):
+    """Get Azure credential based on environment."""
+    if settings.environment == "dev":
+        # Use client secret for local development
+        return ClientSecretCredential(
+            tenant_id=settings.azure_tenant_id,
+            client_id=settings.azure_client_id,
+            client_secret=settings.azure_client_secret,
+        )
+    else:
+        # Use managed identity in Azure
+        return ManagedIdentityCredential()
+
+def get_default_credential():
+    """Get DefaultAzureCredential (tries multiple auth methods)."""
+    return DefaultAzureCredential()
+```
+
+## Deployment Scripts
+
+### GitHub Actions Workflow
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options: [dev, uat, prod]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: make install
+      - run: make lint-ci
+      - run: make test-ci
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - uses: azure/webapps-deploy@v2
+        with:
+          app-name: deltashare-api-${{ env.ENVIRONMENT }}
+          package: .
+```
+
+### Database Migration in CI/CD
+```yaml
+# Add to deploy job
+- name: Run Alembic migrations
+  run: |
+    pip install -e ".[dev]"
+    alembic upgrade head
+  env:
+    DATABASE_URL: ${{ secrets.DATABASE_URL }}
+```
+
+## Health Checks
+
+### Health Endpoint
+```python
+# routes_health.py
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
+
+ROUTER_HEALTH = APIRouter(tags=["Health"])
+
+@ROUTER_HEALTH.get("/health")
+async def health_check():
+    """Basic health check endpoint."""
+    return {"status": "healthy"}
+
+@ROUTER_HEALTH.get("/health/ready")
+async def readiness_check(request: Request):
+    """Readiness check - verify all dependencies."""
+    settings = request.app.state.settings
+    checks = {
+        "database": await check_database_connection(settings),
+        "databricks": await check_databricks_connection(settings),
+    }
+    all_healthy = all(checks.values())
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if all_healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "ready" if all_healthy else "not ready", "checks": checks},
+    )
+```
+
+## Logging Configuration
+
+```python
+# logging_config.py
+import logging
+import sys
+
+def configure_logging(environment: str):
+    """Configure logging for the application."""
+    log_level = logging.DEBUG if environment == "dev" else logging.INFO
+
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+    # Reduce noise from third-party libraries
+    logging.getLogger("azure").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+```
+
+## Secrets Management
+
+### Azure Key Vault Integration
+```python
+# secrets/keyvault.py
+from azure.keyvault.secrets import SecretClient
+from azure.identity import DefaultAzureCredential
+
+def get_secret(vault_url: str, secret_name: str) -> str:
+    """Retrieve secret from Azure Key Vault."""
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=vault_url, credential=credential)
+    return client.get_secret(secret_name).value
+```
+
+### Required Secrets
+| Secret | Description |
+|--------|-------------|
+| `databricks-client-id` | Databricks service principal client ID |
+| `databricks-client-secret` | Databricks service principal secret |
+| `db-password` | PostgreSQL database password |
+| `queue-connection-string` | Azure Queue connection string |
