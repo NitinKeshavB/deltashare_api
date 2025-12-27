@@ -31,8 +31,8 @@ jobs:
           python -m venv antenv
           source antenv/bin/activate
           pip install -r requirements.txt
-
-      # By default, when you enable GitHub CI/CD integration through the Azure portal, the platform automatically sets the SCM_DO_BUILD_DURING_DEPLOYMENT application setting to true. This triggers the use of Oryx, a build engine that handles application compilation and dependency installation (e.g., pip install) directly on the platform during deployment. Hence, we exclude the antenv virtual environment directory from the deployment artifact to reduce the payload size.
+                
+      # By default, when you enable GitHub CI/CD integration through the Azure portal, the platform automatically sets the SCM_DO_BUILD_DURING_DEPLOYMENT application setting to true. This triggers the use of Oryx, a build engine that handles application compilation and dependency installation (e.g., pip install) directly on the platform during deployment. Hence, we exclude the antenv virtual environment directory from the deployment artifact to reduce the payload size. 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
@@ -45,7 +45,7 @@ jobs:
       # If you prefer to disable the Oryx build process during deployment, follow these steps:
       # 1. Remove the SCM_DO_BUILD_DURING_DEPLOYMENT app setting from your Azure App Service Environment variables.
       # 2. Refer to sample workflows for alternative deployment strategies: https://github.com/Azure/actions-workflow-samples/tree/master/AppService
-
+      
 
   deploy:
     runs-on: ubuntu-latest
@@ -59,13 +59,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
-
+      
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_48D0E459DF7C456B8BF8625D93738906 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_AF6F5377467145E591A1AA813A2318FE }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_BBAEE598E72B4AFA9B201EE2A37C5412 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_48DB6E287BA549988D59168E3D60AB44 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_16DBC2809328461DAC5363826624BB9B }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_580B722581D6458EA01B5CDE5F81024C }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
@@ -73,3 +73,4 @@ jobs:
         with:
           app-name: 'deltashare-edaas'
           slot-name: 'Production'
+          
