@@ -8,6 +8,8 @@ from typing import (
     Optional,
 )
 
+from loguru import logger
+
 try:
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.service.sharing import (
@@ -20,7 +22,7 @@ try:
 
     from dbrx_api.dbrx_auth.token_gen import get_auth_token
 except ImportError:
-    print("failed to import libraries")
+    logger.error("Failed to import required libraries")
 
 import os
 
@@ -42,6 +44,12 @@ def list_shares_all(
     Returns:
         List of ShareInfo objects
     """
+    logger.debug(
+        "Listing shares from business logic",
+        max_results=max_results,
+        prefix=prefix,
+        workspace_url=dltshr_workspace_url,
+    )
     try:
         session_token = get_auth_token(datetime.now(timezone.utc))[0]
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -56,9 +64,10 @@ def list_shares_all(
             else:
                 all_shares.append(share)
 
+        logger.debug("Shares listed successfully from business logic", count=len(all_shares), prefix=prefix)
         return all_shares
     except Exception as e:
-        print(f"✗ Error listing shares: {e}")
+        logger.error("Error listing shares from business logic", error=str(e), prefix=prefix, max_results=max_results)
         raise
 
 
@@ -72,6 +81,7 @@ def get_shares(share_name: str, dltshr_workspace_url: str):
     Returns:
         ShareInfo object or None if not found
     """
+    logger.debug("Getting share from business logic", share_name=share_name, workspace_url=dltshr_workspace_url)
     try:
         # Get authentication token
         session_token = get_auth_token(datetime.now(timezone.utc))[0]
@@ -81,10 +91,11 @@ def get_shares(share_name: str, dltshr_workspace_url: str):
 
         # Get recipient by name
         response = w_client.shares.get(name=share_name)
+        logger.debug("Share retrieved successfully from business logic", share_name=share_name, owner=response.owner)
         return response
 
     except Exception as e:
-        print(f"✗ Error retrieving share '{share_name}': {e}")
+        logger.warning("Error retrieving share from business logic", share_name=share_name, error=str(e))
         return None
 
 

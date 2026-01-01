@@ -9,7 +9,13 @@ authors = [{ name = "Nitin Keshav", email = "nitinkeshav.bolla@jll.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = ["fastapi", "pydantic", "pydantic_settings","dotenv", "typing-extensions"]
+dependencies = [
+    "fastapi",
+    "pydantic",
+    "pydantic_settings",
+    "dotenv",
+    "typing-extensions",
+]
 classifiers = ["Programming Language :: Python :: 3"]
 keywords = ["one", "two"]
 
@@ -22,9 +28,9 @@ version = { file = "version.txt" }
 
 # optional dependencies can be installed with square brackets, e.g. `pip install my-package[test,static-code-qa]`
 [project.optional-dependencies]
-dbrx= ["databricks-sdk"]
+dbrx = ["databricks-sdk", "loguru"]
 api = ["uvicorn"]
-azure = ["azure-storage-blob","azure-identity"]
+azure = ["azure-storage-blob", "azure-identity"]
 test = ["pytest", "pytest-cov"]
 release = ["build", "twine"]
 static-code-qa = [
@@ -114,12 +120,7 @@ show_error_codes = true
 show_column_numbers = true
 pretty = true
 ignore_missing_imports = true
-exclude = [
-    "venv",
-    ".venv",
-    "tests",
-    "scripts_notebooks",
-]
+exclude = ["venv", ".venv", "tests", "scripts_notebooks"]
 
 [[tool.mypy.overrides]]
 module = "databricks.*"
