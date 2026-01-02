@@ -1,8 +1,8 @@
+import asyncio
 import json
-import os
 import sys
 import traceback
-from uuid import uuid4
+from typing import Optional
 
 import loguru
 from fastapi import (
@@ -11,16 +11,96 @@ from fastapi import (
 )
 from loguru import logger
 
+# Global handlers for cleanup
+_azure_blob_handler: Optional[any] = None
+_postgresql_handler: Optional[any] = None
+
 
 # Loggers configuration runs at the start of the application -- src/files_api/__init__.py
-def configure_logger():
+def configure_logger(
+    enable_blob_logging: bool = False,
+    azure_storage_url: Optional[str] = None,
+    blob_container: str = "deltashare-logs",
+    enable_postgresql_logging: bool = False,
+    postgresql_connection_string: Optional[str] = None,
+    postgresql_table: str = "application_logs",
+    postgresql_min_level: str = "WARNING",
+):
+    """
+    Configure loguru logger with multiple sinks.
+
+    Args:
+        enable_blob_logging: Enable Azure Blob Storage logging
+        azure_storage_url: Azure Storage Account URL
+        blob_container: Blob container name for logs
+        enable_postgresql_logging: Enable PostgreSQL logging
+        postgresql_connection_string: PostgreSQL connection string
+        postgresql_table: PostgreSQL table name for logs
+        postgresql_min_level: Minimum log level for PostgreSQL
+    """
+    global _azure_blob_handler, _postgresql_handler
+
     logger.remove()  # remove the default logger
+
+    # Add stdout handler (always enabled for console output)
     logger.add(
         sink=sys.stdout,
         diagnose=False,
         format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <bold><white>{message}</white></bold> | <dim>{extra}</dim> {stacktrace}",
         filter=process_log_record,
     )
+
+    # Add Azure Blob Storage handler if enabled
+    if enable_blob_logging and azure_storage_url:
+        try:
+            from dbrx_api.monitoring.azure_blob_handler import AzureBlobLogHandler
+
+            _azure_blob_handler = AzureBlobLogHandler(
+                storage_account_url=azure_storage_url, container_name=blob_container
+            )
+            logger.add(
+                sink=_azure_blob_handler.sink,
+                format="{message}",  # Let the handler format the message
+                level="INFO",  # Log INFO and above to blob storage
+            )
+            logger.info("Azure Blob Storage logging enabled", container=blob_container)
+        except Exception as e:
+            logger.warning(f"Failed to initialize Azure Blob Storage logging: {e}")
+
+    # Add PostgreSQL handler if enabled
+    if enable_postgresql_logging and postgresql_connection_string:
+        try:
+            from dbrx_api.monitoring.postgresql_handler import PostgreSQLLogHandler
+
+            _postgresql_handler = PostgreSQLLogHandler(
+                connection_string=postgresql_connection_string,
+                table_name=postgresql_table,
+                min_level=postgresql_min_level,
+            )
+
+            # Initialize the pool asynchronously
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(_postgresql_handler.initialize_pool())
+                else:
+                    asyncio.run(_postgresql_handler.initialize_pool())
+            except RuntimeError:
+                # No event loop yet - will initialize on first use
+                logger.warning("Event loop not running - PostgreSQL pool will initialize on first log")
+
+            logger.add(
+                sink=_postgresql_handler.sink,
+                format="{message}",  # Let the handler format the message
+                level=postgresql_min_level,  # Only log critical messages to database
+            )
+            logger.info(
+                "PostgreSQL logging enabled",
+                table=postgresql_table,
+                min_level=postgresql_min_level,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize PostgreSQL logging: {e}")
 
 
 def process_log_record(record: "loguru.Record") -> "loguru.Record":
@@ -83,29 +163,3 @@ def log_response_info(response: Response):
         "headers": dict(response.headers.items()),
     }
     logger.debug("Response sent", http_response=response_info)
-
-    """Middleware to add Lambda context to FastAPI request scope."""
-    try:
-        # Get the Lambda context from the incoming request headers
-        context = request.scope["aws.context"]
-        # https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-        lambda_context = {
-            "function_name": os.environ["AWS_LAMBDA_FUNCTION_NAME"],  # context.function_name,
-            "function_arn": context.invoked_function_arn,
-            "function_memory_size": os.environ["AWS_LAMBDA_FUNCTION_MEMORY_SIZE"],  # context.memory_limit_in_mb,
-            "function_request_id": context.aws_request_id,
-        }
-    except KeyError:
-        # when running locally, set mocked values as context
-        lambda_context = {
-            "function_name": "n/a",
-            "function_arn": "n/a",
-            "function_memory_size": "n/a",
-            "function_request_id": str(uuid4()),
-        }
-
-    with logger.contextualize(aws_lambda=lambda_context):
-        response = await call_next(request)
-
-    response.headers["X-Request-ID"] = lambda_context["function_request_id"]
-    return response

@@ -3,11 +3,13 @@ from textwrap import dedent
 import pydantic
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from loguru import logger
 
 from dbrx_api.errors import (
     handle_broad_exceptions,
     handle_pydantic_validation_errors,
 )
+from dbrx_api.monitoring.logger import configure_logger
 from dbrx_api.routes_recipient import ROUTER_RECIPIENT
 from dbrx_api.routes_share import ROUTER_SHARE
 from dbrx_api.settings import Settings
@@ -16,6 +18,19 @@ from dbrx_api.settings import Settings
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create a FastAPI application."""
     settings = settings or Settings()
+
+    # Reconfigure logger with Azure/PostgreSQL logging if enabled in settings
+    configure_logger(
+        enable_blob_logging=settings.enable_blob_logging,
+        azure_storage_url=settings.azure_storage_account_url,
+        blob_container=settings.azure_storage_logs_container,
+        enable_postgresql_logging=settings.enable_postgresql_logging,
+        postgresql_connection_string=settings.postgresql_connection_string,
+        postgresql_table=settings.postgresql_log_table,
+        postgresql_min_level=settings.postgresql_min_log_level,
+    )
+
+    logger.info("Starting DeltaShare API application", workspace_url=settings.dltshr_workspace_url)
 
     app = FastAPI(
         title="Delta Share API",

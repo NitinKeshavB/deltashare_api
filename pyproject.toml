@@ -30,8 +30,8 @@ version = { file = "version.txt" }
 [project.optional-dependencies]
 dbrx = ["databricks-sdk", "loguru"]
 api = ["uvicorn"]
-azure = ["azure-storage-blob", "azure-identity"]
-test = ["pytest", "pytest-cov"]
+azure = ["azure-storage-blob", "azure-identity", "asyncpg"]
+test = ["pytest", "pytest-cov", "httpx", "pytest-asyncio"]
 release = ["build", "twine"]
 static-code-qa = [
     "pre-commit",
@@ -68,6 +68,44 @@ dbrx_api = ["*.json"]
 
 [tool.pytest.ini_options]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--cov=src/dbrx_api",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=0",
+]
+
+[tool.coverage.run]
+source = ["src/dbrx_api"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [tool.black]
 line-length = 119
