@@ -174,3 +174,6 @@ dist
 *env
 *.env
 *cache*
+
+# Test artifacts from mocking
+*MagicMock*

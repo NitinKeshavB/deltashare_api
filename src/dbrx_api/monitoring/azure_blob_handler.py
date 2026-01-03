@@ -45,9 +45,8 @@ class AzureBlobLogHandler:
                     account_url=self.storage_account_url, credential=credential
                 )
             else:
-                # For connection string based auth, update this
-                logger.warning("Connection string auth not implemented - using managed identity")
-                return
+                # No credential - anonymous access or SAS token in URL
+                self.blob_service_client = BlobServiceClient(account_url=self.storage_account_url)
 
             # Get or create container
             self.container_client = self.blob_service_client.get_container_client(self.container_name)
@@ -67,7 +66,7 @@ class AzureBlobLogHandler:
         Args:
             message: Log message from loguru
         """
-        if not self.container_client:
+        if not self.blob_service_client:
             # Silently skip if client not initialized
             return
 
@@ -86,9 +85,11 @@ class AzureBlobLogHandler:
             )
 
             # Prepare log entry
+            # Handle both real loguru records and test mocks
+            level = record["level"]["name"] if isinstance(record["level"], dict) else record["level"].name
             log_entry = {
                 "timestamp": timestamp.isoformat(),
-                "level": record["level"].name,
+                "level": level,
                 "logger": record["name"],
                 "function": record["function"],
                 "line": record["line"],
@@ -105,7 +106,7 @@ class AzureBlobLogHandler:
                 }
 
             # Upload to blob storage
-            blob_client = self.container_client.get_blob_client(blob_name)
+            blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=blob_name)
             blob_client.upload_blob(
                 json.dumps(log_entry, default=str, indent=2), overwrite=False, content_type="application/json"
             )

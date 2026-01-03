@@ -8,8 +8,11 @@ from datetime import (
 from unittest.mock import (
     AsyncMock,
     MagicMock,
+    Mock,
     patch,
 )
+
+import pytest
 
 
 class TestAzureBlobLogHandler:
@@ -134,7 +137,8 @@ class TestAzureBlobLogHandler:
 class TestPostgreSQLLogHandler:
     """Tests for PostgreSQL logging handler."""
 
-    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool")
+    @pytest.mark.asyncio
+    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool", new_callable=AsyncMock)
     async def test_handler_initialization(self, mock_create_pool):
         """Test handler initialization."""
         from dbrx_api.monitoring.postgresql_handler import PostgreSQLLogHandler
@@ -155,7 +159,8 @@ class TestPostgreSQLLogHandler:
         assert handler.table_name == "test_logs"
         assert handler.min_level == "WARNING"
 
-    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool")
+    @pytest.mark.asyncio
+    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool", new_callable=AsyncMock)
     async def test_handler_creates_table(self, mock_create_pool):
         """Test that handler creates the logs table."""
         from dbrx_api.monitoring.postgresql_handler import PostgreSQLLogHandler
@@ -163,7 +168,12 @@ class TestPostgreSQLLogHandler:
         # Setup mock pool and connection
         mock_pool = AsyncMock()
         mock_connection = AsyncMock()
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_connection
+        # Mock the async context manager for pool.acquire()
+        # Note: pool.acquire() is NOT async, it returns an async context manager
+        mock_acquire_cm = MagicMock()
+        mock_acquire_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_acquire_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.acquire = Mock(return_value=mock_acquire_cm)
         mock_create_pool.return_value = mock_pool
 
         handler = PostgreSQLLogHandler(
@@ -244,8 +254,9 @@ class TestLoggerConfiguration:
         # This should not raise an error
         configure_logger()
 
+    @patch("dbrx_api.monitoring.logger.logger")
     @patch("dbrx_api.monitoring.logger.AzureBlobLogHandler")
-    def test_configure_logger_with_blob_storage(self, mock_blob_handler):
+    def test_configure_logger_with_blob_storage(self, mock_blob_handler, mock_logger):
         """Test logger configuration with Azure Blob Storage enabled."""
         from dbrx_api.monitoring.logger import configure_logger
 
@@ -256,9 +267,12 @@ class TestLoggerConfiguration:
         )
 
         mock_blob_handler.assert_called_once()
+        # Verify logger.add was called for blob handler
+        assert mock_logger.add.called
 
+    @patch("dbrx_api.monitoring.logger.logger")
     @patch("dbrx_api.monitoring.logger.PostgreSQLLogHandler")
-    def test_configure_logger_with_postgresql(self, mock_pg_handler):
+    def test_configure_logger_with_postgresql(self, mock_pg_handler, mock_logger):
         """Test logger configuration with PostgreSQL enabled."""
         from dbrx_api.monitoring.logger import configure_logger
 
@@ -270,10 +284,13 @@ class TestLoggerConfiguration:
         )
 
         mock_pg_handler.assert_called_once()
+        # Verify logger.add was called for PostgreSQL handler
+        assert mock_logger.add.called
 
+    @patch("dbrx_api.monitoring.logger.logger")
     @patch("dbrx_api.monitoring.logger.AzureBlobLogHandler")
     @patch("dbrx_api.monitoring.logger.PostgreSQLLogHandler")
-    def test_configure_logger_with_all_sinks(self, mock_pg_handler, mock_blob_handler):
+    def test_configure_logger_with_all_sinks(self, mock_pg_handler, mock_blob_handler, mock_logger):
         """Test logger configuration with all sinks enabled."""
         from dbrx_api.monitoring.logger import configure_logger
 
@@ -289,6 +306,8 @@ class TestLoggerConfiguration:
 
         mock_blob_handler.assert_called_once()
         mock_pg_handler.assert_called_once()
+        # Verify logger.add was called for both handlers
+        assert mock_logger.add.call_count >= 2
 
 
 class TestIntegrationLogging:

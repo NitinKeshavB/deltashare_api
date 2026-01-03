@@ -50,7 +50,7 @@ static-code-qa = [
 # - automatically apply formatting
 # - show enhanced autocompletion for stubs libraries
 # See .vscode/settings.json to see how VS Code is configured to use these tools
-dev = ["deltashare_api[dbrx,api,test,release,static-code-qa]"]
+dev = ["deltashare_api[azure,dbrx,api,test,release,static-code-qa]"]
 
 [build-system]
 # Minimum requirements for the build system to execute.
@@ -83,12 +83,7 @@ addopts = [
 
 [tool.coverage.run]
 source = ["src/dbrx_api"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "*/venv/*",
-    "*/.venv/*",
-]
+omit = ["*/tests/*", "*/__pycache__/*", "*/venv/*", "*/.venv/*"]
 
 [tool.coverage.report]
 precision = 2

@@ -49,8 +49,8 @@ class PostgreSQLLogHandler:
         }
         self._min_priority = self._level_priority.get(min_level, 4)
 
-    async def initialize_pool(self) -> None:
-        """Initialize asyncpg connection pool."""
+    async def _ensure_pool(self) -> None:
+        """Ensure asyncpg connection pool is initialized."""
         if asyncpg is None:
             logger.warning("asyncpg not available - PostgreSQL logging disabled")
             return
@@ -65,6 +65,10 @@ class PostgreSQLLogHandler:
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL logging pool: {e}")
             self.pool = None
+
+    async def initialize_pool(self) -> None:
+        """Initialize asyncpg connection pool (alias for _ensure_pool)."""
+        await self._ensure_pool()
 
     async def _create_table_if_not_exists(self) -> None:
         """Create logs table if it doesn't exist."""
@@ -117,7 +121,9 @@ class PostgreSQLLogHandler:
             record = message.record
 
             # Check if log level meets minimum threshold
-            level_priority = self._level_priority.get(record["level"].name, 0)
+            # Handle both real loguru records and test mocks
+            level_name = record["level"]["name"] if isinstance(record["level"], dict) else record["level"].name
+            level_priority = self._level_priority.get(level_name, 0)
             if level_priority < self._min_priority:
                 return
 
@@ -126,7 +132,7 @@ class PostgreSQLLogHandler:
             # Prepare log data
             log_data = {
                 "timestamp": timestamp,
-                "level": record["level"].name,
+                "level": level_name,
                 "logger_name": record["name"],
                 "function_name": record["function"],
                 "line_number": record["line"],
