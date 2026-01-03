@@ -7,10 +7,7 @@ from datetime import (
     timezone,
 )
 from pathlib import Path
-from unittest.mock import (
-    MagicMock,
-    patch,
-)
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,35 +40,21 @@ def mock_settings():
 
 
 @pytest.fixture
-def mock_token_manager():
-    """Mock TokenManager that returns a test token."""
-    from dbrx_api.dbrx_auth.token_manager import TokenManager
-
-    # Create a mock token manager
-    mock_manager = MagicMock(spec=TokenManager)
-
-    # Configure the mock to return a test token
+def mock_get_auth_token():
+    """Mock get_auth_token function that returns a test token."""
     test_token = "test-databricks-token"
     test_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
-
-    mock_manager.get_token.return_value = (test_token, test_expiry)
-    mock_manager.is_token_valid.return_value = True
-    mock_manager.cached_token = test_token
-    mock_manager.cached_expiry = test_expiry
-
-    return mock_manager
+    return (test_token, test_expiry)
 
 
 @pytest.fixture
-def app(mock_settings, mock_token_manager):
-    """Create FastAPI test application with mocked settings and token manager."""
+def app(mock_settings):
+    """Create FastAPI test application with mocked settings."""
     from dbrx_api.main import create_app
 
     # Create app with mocked settings
-    # We need to patch TokenManager creation to use our mock
-    with patch("dbrx_api.main.TokenManager", return_value=mock_token_manager):
-        app = create_app(settings=mock_settings)
-        yield app
+    app = create_app(settings=mock_settings)
+    yield app
 
 
 @pytest.fixture

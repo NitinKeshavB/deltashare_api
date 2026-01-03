@@ -80,8 +80,8 @@ function test:wheel-locally {
     clean || true
     pip install build
     build
-    # Install wheel with test extras to get all test dependencies
-    pip install "./dist/*.whl[test]"
+    # Install wheel with dev extras to get all test dependencies
+    pip install "./dist/*.whl[dev]"
     test:ci
     deactivate || true
 }
