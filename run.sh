@@ -80,7 +80,8 @@ function test:wheel-locally {
     clean || true
     pip install build
     build
-    pip install ./dist/*.whl pytest pytest-cov
+    # Install wheel with test extras to get all test dependencies
+    pip install "./dist/*.whl[test]"
     test:ci
     deactivate || true
 }

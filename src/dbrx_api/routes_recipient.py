@@ -54,9 +54,7 @@ async def get_recipients(request: Request, recipient_name: str, response: Respon
         "Getting recipient by name", recipient_name=recipient_name, method=request.method, path=request.url.path
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if recipient is None:
         logger.warning("Recipient not found", recipient_name=recipient_name)
@@ -108,12 +106,9 @@ async def list_recipients_all(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
 
     recipients = list_recipients(
         dltshr_workspace_url=settings.dltshr_workspace_url,
-        session_token=session_token,
         prefix=query_params.prefix,
         max_results=query_params.page_size,
     )
@@ -158,11 +153,9 @@ async def delete_recipient_by_name(request: Request, recipient_name: str):
     """Delete a Recipient."""
     logger.info("Deleting recipient", recipient_name=recipient_name, method=request.method, path=request.url.path)
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
     if recipient:
-        response = delete_recipient(recipient_name, settings.dltshr_workspace_url, session_token)
+        response = delete_recipient(recipient_name, settings.dltshr_workspace_url)
         if response == "User is not an owner of Recipient":
             logger.warning("Permission denied to delete recipient", recipient_name=recipient_name, error=response)
             raise HTTPException(
@@ -217,9 +210,7 @@ async def create_recipient_databricks_to_databricks(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if recipient:
         logger.warning("Recipient already exists", recipient_name=recipient_name)
@@ -234,7 +225,6 @@ async def create_recipient_databricks_to_databricks(
         description=description,
         sharing_code=sharing_code,
         dltshr_workspace_url=settings.dltshr_workspace_url,
-        session_token=session_token,
     )
 
     if isinstance(recipient, str) and recipient.startswith("Invalid recipient_identifier"):
@@ -294,9 +284,7 @@ async def create_recipient_databricks_to_opensharing(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if recipient:
         logger.warning("Recipient already exists", recipient_name=recipient_name)
@@ -327,7 +315,6 @@ async def create_recipient_databricks_to_opensharing(
         description=description,
         ip_access_list=ip_access_list,
         dltshr_workspace_url=settings.dltshr_workspace_url,
-        session_token=session_token,
     )
 
     if recipient:
@@ -366,8 +353,6 @@ async def rotate_recipient_tokens(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
     if expire_in_seconds < 0:
         logger.warning(
             "Invalid expire_in_seconds value", recipient_name=recipient_name, expire_in_seconds=expire_in_seconds
@@ -377,7 +362,7 @@ async def rotate_recipient_tokens(
             detail="expire_in_seconds must be a non-negative integer",
         )
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for token rotation", recipient_name=recipient_name)
@@ -390,7 +375,6 @@ async def rotate_recipient_tokens(
         recipient_name=recipient_name,
         expire_in_seconds=expire_in_seconds,
         dltshr_workspace_url=settings.dltshr_workspace_url,
-        session_token=session_token,
     )
 
     if isinstance(recipient, str) and "Cannot extend the token expiration time" in recipient:
@@ -451,10 +435,8 @@ async def add_client_ip_to_databricks_opensharing(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for IP addition", recipient_name=recipient_name)
@@ -538,10 +520,8 @@ async def revoke_client_ip_from_databricks_opensharing(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for IP revocation", recipient_name=recipient_name)
@@ -659,8 +639,6 @@ async def update_recipients_description(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
 
     # Remove all quotes and spaces to check if description contains actual content
     cleaned_description = description.strip().replace('"', "").replace("'", "").replace(" ", "")
@@ -672,7 +650,7 @@ async def update_recipients_description(
             detail="Description cannot be empty or contain only spaces, quotes, or a combination thereof",
         )
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for description update", recipient_name=recipient_name)
@@ -685,7 +663,6 @@ async def update_recipients_description(
         recipient_name=recipient_name,
         description=description,
         dltshr_workspace_url=settings.dltshr_workspace_url,
-        session_token=session_token,
     )
 
     if isinstance(recipient, str) and "Permission denied" in recipient:
@@ -731,10 +708,8 @@ async def update_recipients_expiration_time(
         path=request.url.path,
     )
     settings = request.app.state.settings
-    token_manager = request.app.state.token_manager
-    session_token, _ = token_manager.get_token()
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url, session_token)
+    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for expiration time update", recipient_name=recipient_name)
@@ -768,7 +743,6 @@ async def update_recipients_expiration_time(
             recipient_name=recipient_name,
             expiration_time=expiration_time_in_days,
             dltshr_workspace_url=settings.dltshr_workspace_url,
-            session_token=session_token,
         )
 
         if isinstance(recipient, str) and "Permission denied" in recipient:

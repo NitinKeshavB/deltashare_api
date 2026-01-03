@@ -20,13 +20,13 @@ try:
 except ImportError:
     print("failed to import libraries")
 
+from dbrx_api.dbrx_auth.token_gen import get_auth_token
 
 # DLTSHR_WORKSPACE_URL = os.getenv("DLTSHR_WORKSPACE_URL")
 
 
 def list_recipients(
     dltshr_workspace_url: str,
-    session_token: str,
     max_results: Optional[int] = 100,
     prefix: Optional[str] = None,
 ) -> list:
@@ -40,6 +40,7 @@ def list_recipients(
     Returns:
         List of recipient objects
     """
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
     all_recipients = []
 
@@ -67,6 +68,7 @@ def get_recipients(recipient_name: str, dltshr_workspace_url: str):
     """
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -85,7 +87,6 @@ def create_recipient_d2d(
     recipient_identifier: str,
     description: str,
     dltshr_workspace_url: str,
-    session_token: str,
     sharing_code: Optional[str] = None,
 ):
     """Create a Databricks-to-Databricks recipient with DATABRICKS authentication.
@@ -104,6 +105,7 @@ def create_recipient_d2d(
         D2D recipients do NOT support IP access lists.
     """
     # Get authentication token
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
     # Create workspace client
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -138,7 +140,6 @@ def create_recipient_d2o(
     recipient_name: str,
     description: str,
     dltshr_workspace_url: str,
-    session_token: str,
     ip_access_list: Optional[List[str]] = None,
 ):
     """Create a Databricks-to-Open recipient with TOKEN authentication.
@@ -163,6 +164,7 @@ def create_recipient_d2o(
 
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -184,7 +186,6 @@ def create_recipient_d2o(
 def rotate_recipient_token(
     recipient_name: str,
     dltshr_workspace_url: str,
-    session_token: str,
     expire_in_seconds: int = 0,
 ):
     """Rotate token for TOKEN-based recipient.
@@ -199,6 +200,7 @@ def rotate_recipient_token(
     """
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -236,7 +238,6 @@ def add_recipient_ip(
     recipient_name: str,
     ip_access_list: List[str],
     dltshr_workspace_url: str,
-    session_token: str,
 ):
     """Add IP addresses to TOKEN recipient's access list.
 
@@ -256,6 +257,7 @@ def add_recipient_ip(
 
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -292,7 +294,6 @@ def revoke_recipient_ip(
     recipient_name: str,
     ip_access_list: List[str],
     dltshr_workspace_url: str,
-    session_token: str,
 ):
     """Remove IP addresses from TOKEN recipient's access list.
 
@@ -322,6 +323,7 @@ def revoke_recipient_ip(
 
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -377,7 +379,6 @@ def update_recipient_description(
     recipient_name: str,
     description: str,
     dltshr_workspace_url: str,
-    session_token: str,
 ):
     """Update recipient description.
 
@@ -397,6 +398,7 @@ def update_recipient_description(
 
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -420,7 +422,6 @@ def update_recipient_expiration_time(
     recipient_name: str,
     expiration_time: int,
     dltshr_workspace_url: str,
-    session_token: str,
 ):
     """Update recipient expiration time.
 
@@ -434,6 +435,7 @@ def update_recipient_expiration_time(
     """
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -460,7 +462,6 @@ def update_recipient_expiration_time(
 def delete_recipient(
     recipient_name: str,
     dltshr_workspace_url: str,
-    session_token: str,
 ):
     """Delete recipient permanently.
 
@@ -478,6 +479,7 @@ def delete_recipient(
 
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)

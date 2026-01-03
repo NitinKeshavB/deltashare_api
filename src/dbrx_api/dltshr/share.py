@@ -1,4 +1,8 @@
 """Module for managing Databricks recipients for Delta Sharing."""
+from datetime import (
+    datetime,
+    timezone,
+)
 from typing import (
     List,
     Optional,
@@ -21,12 +25,13 @@ except ImportError:
 
 import os
 
+from dbrx_api.dbrx_auth.token_gen import get_auth_token
+
 ###################################
 
 
 def list_shares_all(
     dltshr_workspace_url: str,
-    session_token: str,
     max_results: Optional[int] = 100,
     prefix: Optional[str] = None,
 ) -> List:
@@ -47,6 +52,7 @@ def list_shares_all(
         workspace_url=dltshr_workspace_url,
     )
     try:
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
 
         all_shares = []
@@ -79,6 +85,7 @@ def get_shares(share_name: str, dltshr_workspace_url: str):
     logger.debug("Getting share from business logic", share_name=share_name, workspace_url=dltshr_workspace_url)
     try:
         # Get authentication token
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
         # Create workspace client
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -95,7 +102,6 @@ def get_shares(share_name: str, dltshr_workspace_url: str):
 
 def create_share(
     dltshr_workspace_url: str,
-    session_token: str,
     share_name: str,
     description: str,
     storage_root: Optional[str] = None,
@@ -112,6 +118,7 @@ def create_share(
         ShareInfo object on success, error message string on failure
     """
     # Get authentication token
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
     # Create workspace client
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -147,7 +154,6 @@ def create_share(
 
 def add_data_object_to_share(
     dltshr_workspace_url: str,
-    session_token: str,
     share_name: str,
     objects_to_add: [List[dict]],
 ):
@@ -162,6 +168,7 @@ def add_data_object_to_share(
         ShareInfo object on success, error message string on failure
     """
     # Get authentication token
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
     # Create workspace client
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -273,7 +280,6 @@ def add_data_object_to_share(
 
 def revoke_data_object_from_share(
     dltshr_workspace_url: str,
-    session_token: str,
     share_name: str,
     objects_to_revoke: [List[dict]],
 ):
@@ -288,6 +294,7 @@ def revoke_data_object_from_share(
         ShareInfo object on success, error message string on failure
     """
     # Get authentication token
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
 
     # Create workspace client
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
@@ -397,7 +404,6 @@ def revoke_data_object_from_share(
 
 def add_recipients_to_share(
     dltshr_workspace_url: str,
-    session_token: str,
     share_name: str,
     recipient_name: str,
 ):
@@ -411,6 +417,7 @@ def add_recipients_to_share(
     Returns:
         UpdateSharePermissionsResponse on success, error message string on failure
     """
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
     try:
         # Get share details to check ownership
@@ -486,7 +493,6 @@ def add_recipients_to_share(
 
 def remove_recipients_from_share(
     dltshr_workspace_url: str,
-    session_token: str,
     share_name: str,
     recipient_name: str,
 ):
@@ -500,6 +506,7 @@ def remove_recipients_from_share(
     Returns:
         UpdateSharePermissionsResponse on success, error message string on failure
     """
+    session_token = get_auth_token(datetime.now(timezone.utc))[0]
     w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
     try:
         # Get share details to check ownership
@@ -577,7 +584,6 @@ def remove_recipients_from_share(
 def delete_share(
     share_name: str,
     dltshr_workspace_url: str,
-    session_token: str,
 ):
     """Permanently delete a share.
 
@@ -591,6 +597,7 @@ def delete_share(
     # Validate parameters
 
     try:
+        session_token = get_auth_token(datetime.now(timezone.utc))[0]
         w_client = WorkspaceClient(host=dltshr_workspace_url, token=session_token)
 
         # Delete share
