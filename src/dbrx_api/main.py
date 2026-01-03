@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from loguru import logger
 
+from dbrx_api.dbrx_auth.token_manager import TokenManager
 from dbrx_api.errors import (
     handle_broad_exceptions,
     handle_pydantic_validation_errors,
@@ -31,6 +32,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     logger.info("Starting DeltaShare API application", workspace_url=settings.dltshr_workspace_url)
+
+    # Initialize token manager with cached values from settings
+    token_manager = TokenManager(
+        client_id=settings.client_id,
+        client_secret=settings.client_secret,
+        account_id=settings.account_id,
+        cached_token=settings.databricks_token,
+        cached_expiry=settings.token_expires_at_utc,
+    )
+    logger.info(
+        "Token manager initialized",
+        has_cached_token=token_manager.is_token_valid(),
+    )
 
     app = FastAPI(
         title="Delta Share API",
@@ -59,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
     )
     app.state.settings = settings
+    app.state.token_manager = token_manager
 
     app.include_router(ROUTER_SHARE)
     app.include_router(ROUTER_RECIPIENT)

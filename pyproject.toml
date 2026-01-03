@@ -15,6 +15,7 @@ dependencies = [
     "pydantic_settings",
     "dotenv",
     "typing-extensions",
+    "loguru",
 ]
 classifiers = ["Programming Language :: Python :: 3"]
 keywords = ["one", "two"]
@@ -28,7 +29,7 @@ version = { file = "version.txt" }
 
 # optional dependencies can be installed with square brackets, e.g. `pip install my-package[test,static-code-qa]`
 [project.optional-dependencies]
-dbrx = ["databricks-sdk", "loguru"]
+dbrx = ["databricks-sdk"]
 api = ["uvicorn"]
 azure = ["azure-storage-blob", "azure-identity", "asyncpg"]
 test = ["pytest", "pytest-cov", "httpx", "pytest-asyncio"]

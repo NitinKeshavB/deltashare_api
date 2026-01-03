@@ -32,7 +32,6 @@ from dbrx_api.schemas import (
     GetSharesQueryParams,
     GetSharesResponse,
 )
-from dbrx_api.settings import Settings
 
 ROUTER_SHARE = APIRouter(tags=["Shares"])
 
@@ -49,8 +48,12 @@ ROUTER_SHARE = APIRouter(tags=["Shares"])
 async def get_shares_by_name(request: Request, share_name: str, response: Response) -> ShareInfo:
     """Retrieve detailed information for a specific Delta Sharing share by name."""
     logger.info("Getting share by name", share_name=share_name)
-    settings: Settings = request.app.state.settings
-    share = get_shares(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
+    share = get_shares(
+        share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url, session_token=session_token
+    )
 
     if share is None:
         logger.warning("Share not found", share_name=share_name)
@@ -95,12 +98,15 @@ async def list_shares_all_or_with_prefix(
 ):
     """List all Delta Sharing shares with optional prefix filtering and pagination."""
     logger.info("Listing shares", prefix=query_params.prefix, page_size=query_params.page_size)
-    settings: Settings = request.app.state.settings
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
 
     shares = list_shares_all(
         prefix=query_params.prefix,
         max_results=query_params.page_size,
         dltshr_workspace_url=settings.dltshr_workspace_url,
+        session_token=session_token,
     )
 
     if len(shares) == 0:
@@ -139,10 +145,14 @@ async def list_shares_all_or_with_prefix(
 async def delete_share_by_name(request: Request, share_name: str):
     """Permanently delete a Delta Sharing share and all its associated permissions."""
     logger.info("Deleting share", share_name=share_name, method=request.method, path=request.url.path)
-    settings: Settings = request.app.state.settings
-    share = get_shares(share_name, settings.dltshr_workspace_url)
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
+    share = get_shares(share_name, settings.dltshr_workspace_url, session_token)
     if share:
-        res = delete_share(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+        res = delete_share(
+            share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url, session_token=session_token
+        )
         if isinstance(res, str) and ("User is not an owner of Share" in res):
             logger.warning("Permission denied to delete share", share_name=share_name, error=res)
             raise HTTPException(
@@ -218,8 +228,10 @@ async def create_share(
             ),
         )
 
-    settings: Settings = request.app.state.settings
-    share_resp = get_shares(share_name, settings.dltshr_workspace_url)
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
+    share_resp = get_shares(share_name, settings.dltshr_workspace_url, session_token)
 
     if share_resp:
         logger.warning("Share already exists", share_name=share_name)
@@ -233,6 +245,7 @@ async def create_share(
         description=description,
         storage_root=storage_root,
         dltshr_workspace_url=settings.dltshr_workspace_url,
+        session_token=session_token,
     )
 
     if isinstance(share_resp, str) and ("is not a valid name" in share_resp):
@@ -288,9 +301,11 @@ async def add_data_objects_to_share(
         method=request.method,
         path=request.url.path,
     )
-    settings: Settings = request.app.state.settings
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
 
-    share = get_shares(share_name, settings.dltshr_workspace_url)
+    share = get_shares(share_name, settings.dltshr_workspace_url, session_token)
 
     if not share:
         logger.warning("Share not found for adding data objects", share_name=share_name)
@@ -385,9 +400,11 @@ async def revoke_data_objects_from_share(
         method=request.method,
         path=request.url.path,
     )
-    settings: Settings = request.app.state.settings
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
 
-    share = get_shares(share_name, settings.dltshr_workspace_url)
+    share = get_shares(share_name, settings.dltshr_workspace_url, session_token)
 
     if not share:
         logger.warning("Share not found for revoking data objects", share_name=share_name)
@@ -471,13 +488,16 @@ async def add_recipient_to_share(
         method=request.method,
         path=request.url.path,
     )
-    settings: Settings = request.app.state.settings
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
 
     # Call SDK function directly
     result = adding_recipients_to_share(
         dltshr_workspace_url=settings.dltshr_workspace_url,
         share_name=share_name,
         recipient_name=recipient_name,
+        session_token=session_token,
     )
 
     # Handle error responses (string messages from SDK)
@@ -551,13 +571,16 @@ async def remove_recipients_from_share(
         method=request.method,
         path=request.url.path,
     )
-    settings: Settings = request.app.state.settings
+    settings = request.app.state.settings
+    token_manager = request.app.state.token_manager
+    session_token, _ = token_manager.get_token()
 
     # Call SDK function directly
     result = removing_recipients_from_share(
         dltshr_workspace_url=settings.dltshr_workspace_url,
         share_name=share_name,
         recipient_name=recipient_name,
+        session_token=session_token,
     )
 
     # Handle error responses (string messages from SDK)

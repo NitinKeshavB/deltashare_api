@@ -14,8 +14,14 @@ from typing import Tuple
 import requests
 from dotenv import load_dotenv
 
-# Read environment variables from .env file
-load_dotenv()
+# Conditionally load from .env file if it exists (local development)
+# In production (Azure Web App), environment variables are already set
+env_file = Path(__file__).parent.parent.parent.parent / ".env"
+if env_file.exists():
+    load_dotenv(env_file)
+    print(f"✓ Loaded environment variables from {env_file}")
+else:
+    print("⚠ No .env file found - using web app environment variables")
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
