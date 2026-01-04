@@ -22,7 +22,7 @@ cryptography==46.0.3
 databricks-sdk==0.73.0
 debugpy==1.8.19
 decorator==5.2.1
--e git+https://github.com/NitinKeshavB/deltashare_api.git@af75e688bdff24a5ecdeff9515aaa918bde4f5de#egg=deltashare_api
+-e git+https://github.com/NitinKeshavB/deltashare_api.git@cf19ed7d0aa45be6c6278d43441f21f8dfb2c123#egg=deltashare_api
 dill==0.4.0
 distlib==0.4.0
 docutils==0.22.3
