@@ -18,10 +18,18 @@ import pytest
 class TestAzureBlobLogHandler:
     """Tests for Azure Blob Storage logging handler."""
 
+    @patch("dbrx_api.monitoring.azure_blob_handler.AZURE_SDK_AVAILABLE", True)
     @patch("dbrx_api.monitoring.azure_blob_handler.BlobServiceClient")
     @patch("dbrx_api.monitoring.azure_blob_handler.DefaultAzureCredential")
     def test_handler_initialization_with_managed_identity(self, mock_credential, mock_blob_service):
         """Test handler initialization with managed identity."""
+        # Mock container client
+        mock_container_client = MagicMock()
+        mock_container_client.exists.return_value = True
+        mock_service_instance = MagicMock()
+        mock_service_instance.get_container_client.return_value = mock_container_client
+        mock_blob_service.return_value = mock_service_instance
+
         from dbrx_api.monitoring.azure_blob_handler import AzureBlobLogHandler
 
         handler = AzureBlobLogHandler(
@@ -33,9 +41,18 @@ class TestAzureBlobLogHandler:
         mock_credential.assert_called_once()
         mock_blob_service.assert_called_once()
 
+    @patch("dbrx_api.monitoring.azure_blob_handler.AZURE_SDK_AVAILABLE", True)
     @patch("dbrx_api.monitoring.azure_blob_handler.BlobServiceClient")
-    def test_handler_initialization_without_managed_identity(self, mock_blob_service):
+    @patch("dbrx_api.monitoring.azure_blob_handler.DefaultAzureCredential")
+    def test_handler_initialization_without_managed_identity(self, mock_credential, mock_blob_service):
         """Test handler initialization without managed identity."""
+        # Mock container client
+        mock_container_client = MagicMock()
+        mock_container_client.exists.return_value = True
+        mock_service_instance = MagicMock()
+        mock_service_instance.get_container_client.return_value = mock_container_client
+        mock_blob_service.return_value = mock_service_instance
+
         from dbrx_api.monitoring.azure_blob_handler import AzureBlobLogHandler
 
         handler = AzureBlobLogHandler(
@@ -47,6 +64,7 @@ class TestAzureBlobLogHandler:
         assert handler.storage_account_url == "https://test.blob.core.windows.net"
         mock_blob_service.assert_called_once_with(account_url="https://test.blob.core.windows.net")
 
+    @patch("dbrx_api.monitoring.azure_blob_handler.AZURE_SDK_AVAILABLE", True)
     @patch("dbrx_api.monitoring.azure_blob_handler.BlobServiceClient")
     @patch("dbrx_api.monitoring.azure_blob_handler.DefaultAzureCredential")
     def test_sink_creates_correct_blob_path(self, mock_credential, mock_blob_service):
@@ -56,7 +74,10 @@ class TestAzureBlobLogHandler:
         # Setup mocks
         mock_service_instance = MagicMock()
         mock_blob_client = MagicMock()
+        mock_container_client = MagicMock()
+        mock_container_client.exists.return_value = True
         mock_service_instance.get_blob_client.return_value = mock_blob_client
+        mock_service_instance.get_container_client.return_value = mock_container_client
         mock_blob_service.return_value = mock_service_instance
 
         handler = AzureBlobLogHandler(
@@ -88,6 +109,7 @@ class TestAzureBlobLogHandler:
         assert blob_name.startswith("2026/01/02/15/log_20260102_")
         assert blob_name.endswith(".json")
 
+    @patch("dbrx_api.monitoring.azure_blob_handler.AZURE_SDK_AVAILABLE", True)
     @patch("dbrx_api.monitoring.azure_blob_handler.BlobServiceClient")
     @patch("dbrx_api.monitoring.azure_blob_handler.DefaultAzureCredential")
     def test_sink_uploads_json_data(self, mock_credential, mock_blob_service):
@@ -97,7 +119,10 @@ class TestAzureBlobLogHandler:
         # Setup mocks
         mock_service_instance = MagicMock()
         mock_blob_client = MagicMock()
+        mock_container_client = MagicMock()
+        mock_container_client.exists.return_value = True
         mock_service_instance.get_blob_client.return_value = mock_blob_client
+        mock_service_instance.get_container_client.return_value = mock_container_client
         mock_blob_service.return_value = mock_service_instance
 
         handler = AzureBlobLogHandler(
@@ -138,13 +163,19 @@ class TestPostgreSQLLogHandler:
     """Tests for PostgreSQL logging handler."""
 
     @pytest.mark.asyncio
-    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool", new_callable=AsyncMock)
-    async def test_handler_initialization(self, mock_create_pool):
+    @patch("dbrx_api.monitoring.postgresql_handler.ASYNCPG_AVAILABLE", True)
+    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg")
+    async def test_handler_initialization(self, mock_asyncpg):
         """Test handler initialization."""
         from dbrx_api.monitoring.postgresql_handler import PostgreSQLLogHandler
 
         mock_pool = AsyncMock()
-        mock_create_pool.return_value = mock_pool
+        mock_connection = AsyncMock()
+        mock_acquire_cm = MagicMock()
+        mock_acquire_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_acquire_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.acquire = Mock(return_value=mock_acquire_cm)
+        mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
         handler = PostgreSQLLogHandler(
             connection_string="postgresql://user:pass@localhost/testdb",
@@ -160,8 +191,9 @@ class TestPostgreSQLLogHandler:
         assert handler.min_level == "WARNING"
 
     @pytest.mark.asyncio
-    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool", new_callable=AsyncMock)
-    async def test_handler_creates_table(self, mock_create_pool):
+    @patch("dbrx_api.monitoring.postgresql_handler.ASYNCPG_AVAILABLE", True)
+    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg")
+    async def test_handler_creates_table(self, mock_asyncpg):
         """Test that handler creates the logs table."""
         from dbrx_api.monitoring.postgresql_handler import PostgreSQLLogHandler
 
@@ -174,7 +206,7 @@ class TestPostgreSQLLogHandler:
         mock_acquire_cm.__aenter__ = AsyncMock(return_value=mock_connection)
         mock_acquire_cm.__aexit__ = AsyncMock(return_value=None)
         mock_pool.acquire = Mock(return_value=mock_acquire_cm)
-        mock_create_pool.return_value = mock_pool
+        mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
         handler = PostgreSQLLogHandler(
             connection_string="postgresql://user:pass@localhost/testdb",
@@ -195,19 +227,29 @@ class TestPostgreSQLLogHandler:
         assert "level" in sql.lower()
         assert "message" in sql.lower()
 
-    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg.create_pool")
-    def test_sink_filters_by_level(self, mock_create_pool):
+    @pytest.mark.asyncio
+    @patch("dbrx_api.monitoring.postgresql_handler.ASYNCPG_AVAILABLE", True)
+    @patch("dbrx_api.monitoring.postgresql_handler.asyncpg")
+    async def test_sink_filters_by_level(self, mock_asyncpg):
         """Test that sink filters logs by minimum level."""
         from dbrx_api.monitoring.postgresql_handler import PostgreSQLLogHandler
 
         mock_pool = AsyncMock()
-        mock_create_pool.return_value = mock_pool
+        mock_connection = AsyncMock()
+        mock_acquire_cm = MagicMock()
+        mock_acquire_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_acquire_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.acquire = Mock(return_value=mock_acquire_cm)
+        mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
         handler = PostgreSQLLogHandler(
             connection_string="postgresql://user:pass@localhost/testdb",
             table_name="test_logs",
             min_level="ERROR",  # Only ERROR and CRITICAL
         )
+
+        # Initialize pool so the sink doesn't skip
+        await handler._ensure_pool()
 
         # Create mock log records
         info_record = {

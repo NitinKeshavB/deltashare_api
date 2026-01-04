@@ -8,8 +8,13 @@ from loguru import logger
 try:
     from azure.identity import DefaultAzureCredential
     from azure.storage.blob import BlobServiceClient
+
+    AZURE_SDK_AVAILABLE = True
 except ImportError:
     logger.warning("Azure SDK not installed - blob logging will be disabled")
+    DefaultAzureCredential = None  # type: ignore
+    BlobServiceClient = None  # type: ignore
+    AZURE_SDK_AVAILABLE = False
 
 
 class AzureBlobLogHandler:
@@ -38,15 +43,21 @@ class AzureBlobLogHandler:
 
     def _initialize_client(self) -> None:
         """Initialize Azure Blob Storage client."""
+        if not AZURE_SDK_AVAILABLE:
+            logger.warning("Azure SDK not available - skipping blob storage initialization")
+            self.blob_service_client = None
+            self.container_client = None
+            return
+
         try:
             if self.use_managed_identity:
-                credential = DefaultAzureCredential()
-                self.blob_service_client = BlobServiceClient(
+                credential = DefaultAzureCredential()  # type: ignore
+                self.blob_service_client = BlobServiceClient(  # type: ignore
                     account_url=self.storage_account_url, credential=credential
                 )
             else:
                 # No credential - anonymous access or SAS token in URL
-                self.blob_service_client = BlobServiceClient(account_url=self.storage_account_url)
+                self.blob_service_client = BlobServiceClient(account_url=self.storage_account_url)  # type: ignore
 
             # Get or create container
             self.container_client = self.blob_service_client.get_container_client(self.container_name)

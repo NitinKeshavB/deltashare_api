@@ -11,10 +11,13 @@ from loguru import logger
 try:
     import asyncpg
     from asyncpg import Pool
+
+    ASYNCPG_AVAILABLE = True
 except ImportError:
     logger.warning("asyncpg not installed - PostgreSQL logging will be disabled")
-    asyncpg = None
-    Pool = None
+    asyncpg = None  # type: ignore
+    Pool = None  # type: ignore
+    ASYNCPG_AVAILABLE = False
 
 
 class PostgreSQLLogHandler:
@@ -51,12 +54,12 @@ class PostgreSQLLogHandler:
 
     async def _ensure_pool(self) -> None:
         """Ensure asyncpg connection pool is initialized."""
-        if asyncpg is None:
+        if not ASYNCPG_AVAILABLE:
             logger.warning("asyncpg not available - PostgreSQL logging disabled")
             return
 
         try:
-            self.pool = await asyncpg.create_pool(self.connection_string, min_size=2, max_size=10, command_timeout=60)
+            self.pool = await asyncpg.create_pool(self.connection_string, min_size=2, max_size=10, command_timeout=60)  # type: ignore
             logger.info("PostgreSQL logging pool initialized")
 
             # Create table if it doesn't exist
