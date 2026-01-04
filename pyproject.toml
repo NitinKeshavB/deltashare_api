@@ -27,6 +27,10 @@ dynamic = ["version"]
 [tool.setuptools.dynamic]
 version = { file = "version.txt" }
 
+# Package discovery for src/ layout
+[tool.setuptools.packages.find]
+where = ["src"]
+
 # optional dependencies can be installed with square brackets, e.g. `pip install my-package[test,static-code-qa]`
 [project.optional-dependencies]
 dbrx = ["databricks-sdk"]
