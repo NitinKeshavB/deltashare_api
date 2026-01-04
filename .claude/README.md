@@ -72,6 +72,23 @@ This folder contains comprehensive documentation for the Delta Share API project
   - Example queries for auditing and analytics
   - Security best practices
 
+- **[QUICK_START_DATABASE_LOGGING.md](./QUICK_START_DATABASE_LOGGING.md)** - 5-minute PostgreSQL setup
+  - Quick setup for database logging
+  - Essential queries
+  - User identity tracking
+
+- **[AZURE_BLOB_LOGGING_GUIDE.md](./AZURE_BLOB_LOGGING_GUIDE.md)** - Blob storage logging for analytics
+  - Structured JSON logging to Azure Blob Storage
+  - Automatic date/time partitioning
+  - External table setup (Synapse, Databricks, Kusto)
+  - Request/response tracking with full context
+  - Cost optimization with lifecycle policies
+
+- **[QUICK_START_BLOB_LOGGING.md](./QUICK_START_BLOB_LOGGING.md)** - 5-minute blob storage setup
+  - Quick setup for blob logging
+  - External table examples
+  - Common analytics queries
+
 ## 🚀 Quick Start
 
 1. **Local Development**

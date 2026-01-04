@@ -61,21 +61,39 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             referer=request.headers.get("Referer", "direct"),
             origin=request.headers.get("Origin", "unknown"),
         ):
-            # Log the incoming request
+            # Log the incoming request with full details
             logger.info(
                 "Incoming request",
                 method=request.method,
                 path=request.url.path,
                 query_params=str(request.query_params),
+                # Additional structured fields for external tables
+                event_type="request_received",
+                http_method=request.method,
+                url_path=str(request.url.path),
+                url_query=str(request.query_params) if request.query_params else None,
+                http_version=request.scope.get("http_version", "1.1"),
+                content_type=request.headers.get("Content-Type"),
+                content_length=request.headers.get("Content-Length"),
             )
 
-            # Process request
-            response = await call_next(request)
+            # Process request and capture timing
+            import time
 
-            # Log the response
+            start_time = time.time()
+            response = await call_next(request)
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Log the response with full details
             logger.info(
                 "Request completed",
                 status_code=response.status_code,
+                # Additional structured fields for external tables
+                event_type="request_completed",
+                http_status=response.status_code,
+                response_time_ms=round(duration_ms, 2),
+                response_content_type=response.headers.get("content-type"),
+                response_content_length=response.headers.get("content-length"),
             )
 
             return response
