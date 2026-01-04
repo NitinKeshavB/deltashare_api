@@ -10,6 +10,7 @@ from dbrx_api.errors import (
     handle_pydantic_validation_errors,
 )
 from dbrx_api.monitoring.logger import configure_logger
+from dbrx_api.routes_health import ROUTER_HEALTH
 from dbrx_api.routes_recipient import ROUTER_RECIPIENT
 from dbrx_api.routes_share import ROUTER_SHARE
 from dbrx_api.settings import Settings
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    app.include_router(ROUTER_HEALTH)
     app.include_router(ROUTER_SHARE)
     app.include_router(ROUTER_RECIPIENT)
     app.add_exception_handler(

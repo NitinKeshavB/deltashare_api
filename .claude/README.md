@@ -11,6 +11,12 @@ This folder contains comprehensive documentation for the Delta Share API project
   - Architecture patterns
   - Databricks SDK usage
 
+- **[HEALTH_CHECK_GUIDE.md](./HEALTH_CHECK_GUIDE.md)** - Health check endpoints documentation
+  - Available endpoints (/health, /health/live, /health/ready)
+  - Azure Web App configuration
+  - Kubernetes probes setup
+  - Monitoring and troubleshooting
+
 ### Deployment & Configuration
 - **[AZURE_WEBAPP_CONFIG.md](./AZURE_WEBAPP_CONFIG.md)** - Azure Web App environment variable configuration
   - Required environment variables
