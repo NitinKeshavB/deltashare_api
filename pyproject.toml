@@ -32,7 +32,7 @@ version = { file = "version.txt" }
 dbrx = ["databricks-sdk"]
 api = ["uvicorn"]
 azure = ["azure-storage-blob", "azure-identity", "asyncpg"]
-test = ["pytest", "pytest-cov", "httpx", "pytest-asyncio"]
+test = ["pytest", "pytest-cov", "httpx", "pytest-asyncio", "uvicorn"]
 release = ["build", "twine"]
 static-code-qa = [
     "pre-commit",
