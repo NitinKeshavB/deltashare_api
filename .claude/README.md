@@ -65,6 +65,13 @@ This folder contains comprehensive documentation for the Delta Share API project
   - PostgreSQL logging
   - Log configuration
 
+- **[DATABASE_LOGGING_GUIDE.md](./DATABASE_LOGGING_GUIDE.md)** - Database logging setup with request tracking
+  - PostgreSQL setup in Azure
+  - Tracking who/where/when for every request
+  - User identity detection (Azure AD, JWT, API keys)
+  - Example queries for auditing and analytics
+  - Security best practices
+
 ## 🚀 Quick Start
 
 1. **Local Development**
