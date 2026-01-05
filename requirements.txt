@@ -1,3 +1,5 @@
+
+# Local package (editable install)
 -e .[dbrx,api,azure]
 annotated-doc==0.0.4
 annotated-types==0.7.0
@@ -23,7 +25,6 @@ cryptography==46.0.3
 databricks-sdk==0.73.0
 debugpy==1.8.19
 decorator==5.2.1
--e git+https://github.com/NitinKeshavB/deltashare_api.git@3ddebe6bdc7d7b7b63dd2ef5044a80fc28f2116b#egg=deltashare_api
 dill==0.4.0
 distlib==0.4.0
 docutils==0.22.3

@@ -43,11 +43,14 @@ def regenerate_requirements() -> int:
             line = line.strip()
             if not line:
                 continue
-            # Skip editable installs of this package
-            if line.startswith("-e") and "deltashare_api" in line:
+            # Skip editable installs of this package (any format)
+            if "deltashare_api" in line.lower() or "deltashare-api" in line.lower():
                 continue
             # Skip file:// paths (local editable installs)
             if "@ file://" in line:
+                continue
+            # Skip git-based editable installs
+            if line.startswith("-e git+"):
                 continue
             lines.append(line)
 
