@@ -5,7 +5,7 @@
 [project]
 name = "deltashare_api"
 description = "This is a Python client library for the DeltaShare API."
-authors = [{ name = "Nitin Keshav", email = "nitinkeshav.bolla@jll.com" }]
+authors = [{ name = "NitinKeshav", email = "nitinkeshav.bolla@jll.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
