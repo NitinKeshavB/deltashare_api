@@ -2,6 +2,7 @@ from textwrap import dedent
 
 import pydantic
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
 from loguru import logger
 
@@ -93,7 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         | [API Status](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587970637/API+Dev+Status) | <img alt="Static Badge" src="https://img.shields.io/badge/Recipient_Done-Green?style=for-the-badge&logoColor=green"> <img alt="Static Badge" src="https://img.shields.io/badge/share_Done-blue?style=for-the-badge&color=blue"> |
         """
         ),
-        docs_url="/",  # its easier to find the docs when they live on the base url
+        docs_url=None,  # Disable default docs to use custom
         generate_unique_id_function=custom_generate_unique_id,
         swagger_ui_parameters={
             "defaultModelsExpandDepth": -1,  # Hide schemas section
@@ -101,6 +102,84 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
     )
     app.state.settings = settings
+
+    # Custom Swagger UI with smaller example text
+    @app.get("/", include_in_schema=False)
+    async def custom_swagger_ui_html():
+        return HTMLResponse(
+            content=f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+                <title>{app.title} - Swagger UI</title>
+                <style>
+                    /* Make example text smaller and italicized to match description */
+                    .parameter__example,
+                    .parameter__example .example,
+                    .parameter__example .example__value {{
+                        font-size: 12px !important;
+                        font-style: italic !important;
+                    }}
+
+                    /* Hide Swagger logo */
+                    .topbar-wrapper img,
+                    .topbar-wrapper .link {{
+                        display: none !important;
+                    }}
+
+                    /* Hide filter/search box and Explore text */
+                    .filter-container,
+                    .operation-filter-input,
+                    input[placeholder="Filter by tag"],
+                    .topbar-wrapper input,
+                    .wrapper .link,
+                    .topbar .wrapper section {{
+                        display: none !important;
+                    }}
+
+                    /* Hide any element containing "Explore" text */
+                    .topbar span,
+                    .topbar label {{
+                        display: none !important;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div id="swagger-ui"></div>
+                <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+                <script>
+                    const ui = SwaggerUIBundle({{
+                        url: '{app.openapi_url}',
+                        dom_id: '#swagger-ui',
+                        presets: [
+                            SwaggerUIBundle.presets.apis,
+                            SwaggerUIStandalonePreset
+                        ],
+                        layout: "StandaloneLayout",
+                        deepLinking: true,
+                        defaultModelsExpandDepth: -1,
+                        defaultModelExpandDepth: 1,
+                        filter: false
+                    }})
+
+                    // Pre-fill X-Workspace-URL header input with example value
+                    setTimeout(() => {{
+                        const observer = new MutationObserver(() => {{
+                            const workspaceUrlInput = document.querySelector('input[placeholder*="X-Workspace-URL"], input[data-param-name="X-Workspace-URL"]');
+                            if (workspaceUrlInput && !workspaceUrlInput.value) {{
+                                workspaceUrlInput.value = 'https://adb-1234567890123456.12.azuredatabricks.net';
+                                workspaceUrlInput.placeholder = 'https://adb-1234567890123456.12.azuredatabricks.net';
+                            }}
+                        }});
+                        observer.observe(document.body, {{ childList: true, subtree: true }});
+                    }}, 1000);
+                </script>
+            </body>
+            </html>
+            """
+        )
 
     # Add request context middleware for tracking who/where requests come from
     app.add_middleware(RequestContextMiddleware)

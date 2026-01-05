@@ -153,7 +153,6 @@ async def get_workspace_url(
         ...,
         alias="X-Workspace-URL",
         description="<small>*HTTPS URL of Databricks workspace*</small>",
-        example="https://adb-1234567890123456.12.azuredatabricks.net",
     ),
 ) -> str:
     """
