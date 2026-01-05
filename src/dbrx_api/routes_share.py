@@ -17,6 +17,10 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from dbrx_api.dependencies import (
+    get_workspace_url,
+    verify_subscription_key,
+)
 from dbrx_api.dltshr.share import add_data_object_to_share
 from dbrx_api.dltshr.share import add_recipients_to_share as adding_recipients_to_share
 from dbrx_api.dltshr.share import create_share as create_share_func
@@ -45,11 +49,16 @@ ROUTER_SHARE = APIRouter(tags=["Shares"])
         },
     },
 )
-async def get_shares_by_name(request: Request, share_name: str, response: Response) -> ShareInfo:
+async def get_shares_by_name(
+    request: Request,
+    share_name: str,
+    response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
+) -> ShareInfo:
     """Retrieve detailed information for a specific Delta Sharing share by name."""
-    logger.info("Getting share by name", share_name=share_name)
-    settings = request.app.state.settings
-    share = get_shares(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+    logger.info("Getting share by name", share_name=share_name, workspace_url=workspace_url)
+    share = get_shares(share_name=share_name, dltshr_workspace_url=workspace_url)
 
     if share is None:
         logger.warning("Share not found", share_name=share_name)
@@ -90,15 +99,23 @@ async def get_shares_by_name(request: Request, share_name: str, response: Respon
     },
 )
 async def list_shares_all_or_with_prefix(
-    request: Request, response: Response, query_params: GetSharesQueryParams = Depends()
+    request: Request,
+    response: Response,
+    query_params: GetSharesQueryParams = Depends(),
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ):
     """List all Delta Sharing shares with optional prefix filtering and pagination."""
-    logger.info("Listing shares", prefix=query_params.prefix, page_size=query_params.page_size)
-    settings = request.app.state.settings
+    logger.info(
+        "Listing shares",
+        prefix=query_params.prefix,
+        page_size=query_params.page_size,
+        workspace_url=workspace_url,
+    )
     shares = list_shares_all(
         prefix=query_params.prefix,
         max_results=query_params.page_size,
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     if len(shares) == 0:
@@ -134,13 +151,23 @@ async def list_shares_all_or_with_prefix(
         },
     },
 )
-async def delete_share_by_name(request: Request, share_name: str):
+async def delete_share_by_name(
+    request: Request,
+    share_name: str,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
+):
     """Permanently delete a Delta Sharing share and all its associated permissions."""
-    logger.info("Deleting share", share_name=share_name, method=request.method, path=request.url.path)
-    settings = request.app.state.settings
-    share = get_shares(share_name, settings.dltshr_workspace_url)
+    logger.info(
+        "Deleting share",
+        share_name=share_name,
+        method=request.method,
+        path=request.url.path,
+        workspace_url=workspace_url,
+    )
+    share = get_shares(share_name, workspace_url)
     if share:
-        res = delete_share(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+        res = delete_share(share_name=share_name, dltshr_workspace_url=workspace_url)
         if isinstance(res, str) and ("User is not an owner of Share" in res):
             logger.warning("Permission denied to delete share", share_name=share_name, error=res)
             raise HTTPException(
@@ -185,6 +212,8 @@ async def create_share(
     share_name: str,
     description: str,
     storage_root: Optional[str] = None,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Create a new Delta Sharing share for Databricks-to-Databricks data sharing."""
     logger.info(
@@ -194,6 +223,7 @@ async def create_share(
         storage_root=storage_root,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
 
     if not share_name or not share_name.strip():
@@ -216,8 +246,7 @@ async def create_share(
             ),
         )
 
-    settings = request.app.state.settings
-    share_resp = get_shares(share_name, settings.dltshr_workspace_url)
+    share_resp = get_shares(share_name, workspace_url)
 
     if share_resp:
         logger.warning("Share already exists", share_name=share_name)
@@ -230,7 +259,7 @@ async def create_share(
         share_name=share_name,
         description=description,
         storage_root=storage_root,
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     if isinstance(share_resp, str) and ("is not a valid name" in share_resp):
@@ -275,6 +304,8 @@ async def add_data_objects_to_share(
             "schemas": ["catalog.schema"],
         },
     ),
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Add data objects (tables, views, schemas) to an existing Delta Sharing share."""
     logger.info(
@@ -285,9 +316,9 @@ async def add_data_objects_to_share(
         schemas=objects_to_add.schemas,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
-    share = get_shares(share_name, settings.dltshr_workspace_url)
+    share = get_shares(share_name, workspace_url)
 
     if not share:
         logger.warning("Share not found for adding data objects", share_name=share_name)
@@ -299,7 +330,7 @@ async def add_data_objects_to_share(
     result = add_data_object_to_share(
         share_name=share_name,
         objects_to_add=objects_to_add.model_dump(),
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     # Handle error responses (string messages)
@@ -371,6 +402,8 @@ async def revoke_data_objects_from_share(
             "schemas": ["catalog.schema"],
         },
     ),
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Remove data objects (tables, views, schemas) from a Delta Sharing share."""
     logger.info(
@@ -381,9 +414,9 @@ async def revoke_data_objects_from_share(
         schemas=objects_to_revoke.schemas,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
-    share = get_shares(share_name, settings.dltshr_workspace_url)
+    share = get_shares(share_name, workspace_url)
 
     if not share:
         logger.warning("Share not found for revoking data objects", share_name=share_name)
@@ -395,7 +428,7 @@ async def revoke_data_objects_from_share(
     result = revoke_data_object_from_share(
         share_name=share_name,
         objects_to_revoke=objects_to_revoke.model_dump(),
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     # Handle error responses (string messages)
@@ -458,6 +491,8 @@ async def add_recipient_to_share(
     recipient_name: str,
     request: Request,
     response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> UpdateSharePermissionsResponse:
     """Grant SELECT permission to a recipient for a Delta Sharing share."""
     logger.info(
@@ -466,11 +501,11 @@ async def add_recipient_to_share(
         recipient_name=recipient_name,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
     # Call SDK function directly
     result = adding_recipients_to_share(
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
         share_name=share_name,
         recipient_name=recipient_name,
     )
@@ -537,6 +572,8 @@ async def remove_recipients_from_share(
     recipient_name: str,
     request: Request,
     response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> UpdateSharePermissionsResponse:
     """Revoke SELECT permission from a recipient for a Delta Sharing share."""
     logger.info(
@@ -545,11 +582,11 @@ async def remove_recipients_from_share(
         recipient_name=recipient_name,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
     # Call SDK function directly
     result = removing_recipients_from_share(
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
         share_name=share_name,
         recipient_name=recipient_name,
     )

@@ -5,6 +5,182 @@ from databricks.sdk.service.sharing import UpdateSharePermissionsResponse
 from fastapi import status
 
 
+class TestShareAuthenticationHeaders:
+    """Tests for required authentication headers on Share endpoints."""
+
+    def test_missing_workspace_url_header(self, unauthenticated_client):
+        """Test that requests without X-Workspace-URL header are rejected."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={"Ocp-Apim-Subscription-Key": "test-key"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "X-Workspace-URL" in str(response.json())
+
+    def test_missing_subscription_key_header(self, unauthenticated_client):
+        """Test that requests without Ocp-Apim-Subscription-Key header are rejected."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={"X-Workspace-URL": "https://test.azuredatabricks.net/"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "Ocp-Apim-Subscription-Key" in str(response.json())
+
+    def test_missing_all_headers(self, unauthenticated_client):
+        """Test that requests without any auth headers are rejected."""
+        response = unauthenticated_client.get("/shares")
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestWorkspaceUrlValidation:
+    """Tests for Databricks workspace URL format validation."""
+
+    def test_valid_azure_workspace_url(self, unauthenticated_client):
+        """Test that Azure Databricks URL pattern is accepted."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://adb-1234567890123456.12.azuredatabricks.net",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+        # Should not fail on URL validation (may fail later on business logic)
+        assert response.status_code != status.HTTP_400_BAD_REQUEST
+
+    def test_valid_aws_workspace_url(self, unauthenticated_client):
+        """Test that AWS Databricks URL pattern is accepted."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://my-workspace.cloud.databricks.com",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+        # Should not fail on URL validation
+        assert response.status_code != status.HTTP_400_BAD_REQUEST
+
+    def test_valid_gcp_workspace_url(self, unauthenticated_client):
+        """Test that GCP Databricks URL pattern is accepted."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://my-workspace.gcp.databricks.com",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+        # Should not fail on URL validation
+        assert response.status_code != status.HTTP_400_BAD_REQUEST
+
+    def test_invalid_non_databricks_url(self, unauthenticated_client):
+        """Test that non-Databricks URLs are rejected."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://example.com",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Invalid Databricks workspace URL format" in response.json()["detail"]
+
+    def test_invalid_http_url(self, unauthenticated_client):
+        """Test that HTTP (non-HTTPS) URLs are rejected."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "http://test.azuredatabricks.net",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "HTTPS" in response.json()["detail"]
+
+    def test_invalid_random_domain_url(self, unauthenticated_client):
+        """Test that random domain URLs are rejected."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://malicious-site.io/databricks",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Invalid Databricks workspace URL format" in response.json()["detail"]
+
+    def test_invalid_partial_databricks_url(self, unauthenticated_client):
+        """Test that partial Databricks-like URLs are rejected."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://fake-azuredatabricks.net.evil.com",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_url_with_trailing_slash_accepted(self, unauthenticated_client):
+        """Test that URLs with trailing slash are accepted and normalized."""
+        response = unauthenticated_client.get(
+            "/shares",
+            headers={
+                "X-Workspace-URL": "https://test-workspace.azuredatabricks.net/",
+                "Ocp-Apim-Subscription-Key": "test-key",
+            },
+        )
+        # Should not fail on URL validation
+        assert response.status_code != status.HTTP_400_BAD_REQUEST
+
+    def test_unreachable_workspace_returns_502(self, unauthenticated_client):
+        """Test that unreachable workspace URLs return 502 with clear error message."""
+        from unittest.mock import (
+            AsyncMock,
+            patch,
+        )
+
+        # Mock the reachability check to return unreachable
+        with patch("dbrx_api.dependencies.check_workspace_reachable", new_callable=AsyncMock) as mock_check:
+            mock_check.return_value = (False, "Workspace hostname 'fake.azuredatabricks.net' could not be resolved.")
+
+            response = unauthenticated_client.get(
+                "/shares",
+                headers={
+                    "X-Workspace-URL": "https://fake.azuredatabricks.net",
+                    "Ocp-Apim-Subscription-Key": "test-key",
+                },
+            )
+
+            assert response.status_code == status.HTTP_502_BAD_GATEWAY
+            assert "could not be resolved" in response.json()["detail"]
+
+    def test_workspace_timeout_returns_502(self, unauthenticated_client):
+        """Test that workspace connection timeout returns 502."""
+        from unittest.mock import (
+            AsyncMock,
+            patch,
+        )
+
+        with patch("dbrx_api.dependencies.check_workspace_reachable", new_callable=AsyncMock) as mock_check:
+            mock_check.return_value = (False, "Connection to workspace timed out.")
+
+            response = unauthenticated_client.get(
+                "/shares",
+                headers={
+                    "X-Workspace-URL": "https://slow-workspace.azuredatabricks.net",
+                    "Ocp-Apim-Subscription-Key": "test-key",
+                },
+            )
+
+            assert response.status_code == status.HTTP_502_BAD_GATEWAY
+            assert "timed out" in response.json()["detail"]
+
+
 class TestGetShareByName:
     """Tests for GET /shares/{share_name} endpoint."""
 
@@ -376,3 +552,77 @@ class TestRemoveRecipientFromShare:
         response = client.put("/shares/test_share/recipients/remove", params={"recipient_name": "test_recipient"})
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestDatabricksErrorHandling:
+    """Tests for Databricks SDK error handling."""
+
+    def test_unauthenticated_error_returns_401(self, app, client):
+        """Test that Databricks Unauthenticated errors return 401."""
+        from unittest.mock import patch
+
+        from databricks.sdk.errors import Unauthenticated
+
+        # Mock the business logic to raise Unauthenticated
+        with patch("dbrx_api.routes_share.get_shares") as mock_get:
+            mock_get.side_effect = Unauthenticated("Invalid token")
+
+            response = client.get("/shares/test_share")
+
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+            assert "authentication failed" in response.json()["detail"].lower()
+
+    def test_permission_denied_error_returns_403(self, app, client):
+        """Test that Databricks PermissionDenied errors return 403."""
+        from unittest.mock import patch
+
+        from databricks.sdk.errors import PermissionDenied
+
+        with patch("dbrx_api.routes_share.get_shares") as mock_get:
+            mock_get.side_effect = PermissionDenied("User not authorized")
+
+            response = client.get("/shares/test_share")
+
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+            assert "access denied" in response.json()["detail"].lower()
+
+    def test_not_found_error_returns_404(self, app, client):
+        """Test that Databricks NotFound errors return 404."""
+        from unittest.mock import patch
+
+        from databricks.sdk.errors import NotFound
+
+        with patch("dbrx_api.routes_share.get_shares") as mock_get:
+            mock_get.side_effect = NotFound("Resource not found")
+
+            response = client.get("/shares/test_share")
+
+            assert response.status_code == status.HTTP_404_NOT_FOUND
+            assert "not found" in response.json()["detail"].lower()
+
+    def test_bad_request_error_returns_400(self, app, client):
+        """Test that Databricks BadRequest errors return 400."""
+        from unittest.mock import patch
+
+        from databricks.sdk.errors import BadRequest
+
+        with patch("dbrx_api.routes_share.get_shares") as mock_get:
+            mock_get.side_effect = BadRequest("Invalid parameter")
+
+            response = client.get("/shares/test_share")
+
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_generic_databricks_error_returns_502(self, app, client):
+        """Test that generic Databricks errors return 502 Bad Gateway."""
+        from unittest.mock import patch
+
+        from databricks.sdk.errors import DatabricksError
+
+        with patch("dbrx_api.routes_share.get_shares") as mock_get:
+            mock_get.side_effect = DatabricksError("Some internal error")
+
+            response = client.get("/shares/test_share")
+
+            assert response.status_code == status.HTTP_502_BAD_GATEWAY
+            assert "databricks service error" in response.json()["detail"].lower()

@@ -19,6 +19,10 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from dbrx_api.dependencies import (
+    get_workspace_url,
+    verify_subscription_key,
+)
 from dbrx_api.dltshr.recipient import add_recipient_ip
 from dbrx_api.dltshr.recipient import create_recipient_d2d as create_recipient_for_d2d
 from dbrx_api.dltshr.recipient import create_recipient_d2o as create_recipient_for_d2o
@@ -48,13 +52,22 @@ ROUTER_RECIPIENT = APIRouter(tags=["Recipients"])
         },
     },
 )
-async def get_recipients(request: Request, recipient_name: str, response: Response) -> RecipientInfo:
+async def get_recipients(
+    request: Request,
+    recipient_name: str,
+    response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
+) -> RecipientInfo:
     """Get a specific recipient by name."""
     logger.info(
-        "Getting recipient by name", recipient_name=recipient_name, method=request.method, path=request.url.path
+        "Getting recipient by name",
+        recipient_name=recipient_name,
+        method=request.method,
+        path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if recipient is None:
         logger.warning("Recipient not found", recipient_name=recipient_name)
@@ -95,7 +108,11 @@ async def get_recipients(request: Request, recipient_name: str, response: Respon
     },
 )
 async def list_recipients_all(
-    request: Request, response: Response, query_params: GetRecipientsQueryParams = Depends()
+    request: Request,
+    response: Response,
+    query_params: GetRecipientsQueryParams = Depends(),
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ):
     """List all recipients or with optional prefix filtering."""
     logger.info(
@@ -104,11 +121,11 @@ async def list_recipients_all(
         page_size=query_params.page_size,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
 
     recipients = list_recipients(
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
         prefix=query_params.prefix,
         max_results=query_params.page_size,
     )
@@ -149,13 +166,23 @@ async def list_recipients_all(
         },
     },
 )
-async def delete_recipient_by_name(request: Request, recipient_name: str):
+async def delete_recipient_by_name(
+    request: Request,
+    recipient_name: str,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
+):
     """Delete a Recipient."""
-    logger.info("Deleting recipient", recipient_name=recipient_name, method=request.method, path=request.url.path)
-    settings = request.app.state.settings
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    logger.info(
+        "Deleting recipient",
+        recipient_name=recipient_name,
+        method=request.method,
+        path=request.url.path,
+        workspace_url=workspace_url,
+    )
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
     if recipient:
-        response = delete_recipient(recipient_name, settings.dltshr_workspace_url)
+        response = delete_recipient(recipient_name, workspace_url)
         if response == "User is not an owner of Recipient":
             logger.warning("Permission denied to delete recipient", recipient_name=recipient_name, error=response)
             raise HTTPException(
@@ -198,6 +225,8 @@ async def create_recipient_databricks_to_databricks(
     recipient_identifier: str,
     description: str,
     sharing_code: Optional[str] = None,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Create a recipient for Databricks to Databricks sharing."""
     logger.info(
@@ -208,9 +237,9 @@ async def create_recipient_databricks_to_databricks(
         sharing_code=sharing_code,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if recipient:
         logger.warning("Recipient already exists", recipient_name=recipient_name)
@@ -224,7 +253,7 @@ async def create_recipient_databricks_to_databricks(
         recipient_identifier=recipient_identifier,
         description=description,
         sharing_code=sharing_code,
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     if isinstance(recipient, str) and recipient.startswith("Invalid recipient_identifier"):
@@ -273,6 +302,8 @@ async def create_recipient_databricks_to_opensharing(
     recipient_name: str,
     description: str,
     ip_access_list: Optional[List[str]] = None,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Create a recipient for Databricks to Databricks sharing."""
     logger.info(
@@ -282,9 +313,9 @@ async def create_recipient_databricks_to_opensharing(
         ip_access_list=ip_access_list,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if recipient:
         logger.warning("Recipient already exists", recipient_name=recipient_name)
@@ -314,7 +345,7 @@ async def create_recipient_databricks_to_opensharing(
         recipient_name=recipient_name,
         description=description,
         ip_access_list=ip_access_list,
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     if recipient:
@@ -342,7 +373,12 @@ async def create_recipient_databricks_to_opensharing(
     },
 )
 async def rotate_recipient_tokens(
-    request: Request, response: Response, recipient_name: str, expire_in_seconds: int = 0
+    request: Request,
+    response: Response,
+    recipient_name: str,
+    expire_in_seconds: int = 0,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Rotate a recipient token for Databricks to opensharing protocol."""
     logger.info(
@@ -351,8 +387,8 @@ async def rotate_recipient_tokens(
         expire_in_seconds=expire_in_seconds,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
     if expire_in_seconds < 0:
         logger.warning(
             "Invalid expire_in_seconds value", recipient_name=recipient_name, expire_in_seconds=expire_in_seconds
@@ -362,7 +398,7 @@ async def rotate_recipient_tokens(
             detail="expire_in_seconds must be a non-negative integer",
         )
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for token rotation", recipient_name=recipient_name)
@@ -374,7 +410,7 @@ async def rotate_recipient_tokens(
     recipient = rotate_recipient_token(
         recipient_name=recipient_name,
         expire_in_seconds=expire_in_seconds,
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     if isinstance(recipient, str) and "Cannot extend the token expiration time" in recipient:
@@ -424,7 +460,12 @@ async def rotate_recipient_tokens(
     },
 )
 async def add_client_ip_to_databricks_opensharing(
-    request: Request, recipient_name: str, ip_access_list: List[str], response: Response
+    request: Request,
+    recipient_name: str,
+    ip_access_list: List[str],
+    response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ):
     """Add IP to access list for Databricks to opensharing protocol."""
     logger.info(
@@ -433,10 +474,10 @@ async def add_client_ip_to_databricks_opensharing(
         ip_access_list=ip_access_list,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for IP addition", recipient_name=recipient_name)
@@ -481,7 +522,7 @@ async def add_client_ip_to_databricks_opensharing(
             detail=(f"Invalid IP addresses or CIDR blocks: " f"{', '.join(invalid_ips)}"),
         )
 
-    recipient = add_recipient_ip(recipient_name, ip_access_list, settings.dltshr_workspace_url)
+    recipient = add_recipient_ip(recipient_name, ip_access_list, workspace_url)
 
     if isinstance(recipient, str) and "Permission denied" in recipient:
         logger.warning("Permission denied to add IPs", recipient_name=recipient_name, error=recipient)
@@ -509,7 +550,12 @@ async def add_client_ip_to_databricks_opensharing(
     },
 )
 async def revoke_client_ip_from_databricks_opensharing(
-    request: Request, recipient_name: str, ip_access_list: List[str], response: Response
+    request: Request,
+    recipient_name: str,
+    ip_access_list: List[str],
+    response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """revoke IP to access list for Databricks to opensharing protocol."""
     logger.info(
@@ -518,10 +564,10 @@ async def revoke_client_ip_from_databricks_opensharing(
         ip_access_list=ip_access_list,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for IP revocation", recipient_name=recipient_name)
@@ -587,7 +633,7 @@ async def revoke_client_ip_from_databricks_opensharing(
             ),
         )
 
-    recipient = revoke_recipient_ip(recipient_name, ip_access_list, settings.dltshr_workspace_url)
+    recipient = revoke_recipient_ip(recipient_name, ip_access_list, workspace_url)
 
     if isinstance(recipient, str) and "Permission denied" in recipient:
         logger.warning("Permission denied to revoke IPs", recipient_name=recipient_name, error=recipient)
@@ -629,6 +675,8 @@ async def update_recipients_description(
     recipient_name: str,
     description: str,
     response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Rotate a recipient token for Databricks to opensharing protocol."""
     logger.info(
@@ -637,8 +685,8 @@ async def update_recipients_description(
         description=description,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
 
     # Remove all quotes and spaces to check if description contains actual content
     cleaned_description = description.strip().replace('"', "").replace("'", "").replace(" ", "")
@@ -650,7 +698,7 @@ async def update_recipients_description(
             detail="Description cannot be empty or contain only spaces, quotes, or a combination thereof",
         )
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for description update", recipient_name=recipient_name)
@@ -662,7 +710,7 @@ async def update_recipients_description(
     recipient = update_recipient_description(
         recipient_name=recipient_name,
         description=description,
-        dltshr_workspace_url=settings.dltshr_workspace_url,
+        dltshr_workspace_url=workspace_url,
     )
 
     if isinstance(recipient, str) and "Permission denied" in recipient:
@@ -697,7 +745,12 @@ async def update_recipients_description(
     },
 )
 async def update_recipients_expiration_time(
-    request: Request, recipient_name: str, expiration_time_in_days: int, response: Response
+    request: Request,
+    recipient_name: str,
+    expiration_time_in_days: int,
+    response: Response,
+    workspace_url: str = Depends(get_workspace_url),
+    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Rotate a recipient token for Databricks to opensharing protocol."""
     logger.info(
@@ -706,10 +759,10 @@ async def update_recipients_expiration_time(
         expiration_time_in_days=expiration_time_in_days,
         method=request.method,
         path=request.url.path,
+        workspace_url=workspace_url,
     )
-    settings = request.app.state.settings
 
-    recipient = get_recipient_by_name(recipient_name, settings.dltshr_workspace_url)
+    recipient = get_recipient_by_name(recipient_name, workspace_url)
 
     if not recipient:
         logger.warning("Recipient not found for expiration time update", recipient_name=recipient_name)
@@ -742,7 +795,7 @@ async def update_recipients_expiration_time(
         recipient = update_recipient_expiration_time(
             recipient_name=recipient_name,
             expiration_time=expiration_time_in_days,
-            dltshr_workspace_url=settings.dltshr_workspace_url,
+            dltshr_workspace_url=workspace_url,
         )
 
         if isinstance(recipient, str) and "Permission denied" in recipient:

@@ -6,7 +6,10 @@ from fastapi.routing import APIRoute
 from loguru import logger
 
 from dbrx_api.errors import (
+    DATABRICKS_SDK_AVAILABLE,
+    DatabricksError,
     handle_broad_exceptions,
+    handle_databricks_errors,
     handle_pydantic_validation_errors,
 )
 from dbrx_api.monitoring.logger import configure_logger
@@ -72,6 +75,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         exc_class_or_status_code=pydantic.ValidationError,
         handler=handle_pydantic_validation_errors,
     )
+
+    # Add Databricks error handler if SDK is available
+    if DATABRICKS_SDK_AVAILABLE:
+        app.add_exception_handler(
+            exc_class_or_status_code=DatabricksError,
+            handler=handle_databricks_errors,
+        )
+
     app.middleware("http")(handle_broad_exceptions)
 
     return app

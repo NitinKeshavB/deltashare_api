@@ -10,6 +10,36 @@ from databricks.sdk.service.sharing import AuthenticationType
 from fastapi import status
 
 
+class TestRecipientAuthenticationHeaders:
+    """Tests for required authentication headers on Recipient endpoints."""
+
+    def test_missing_workspace_url_header(self, unauthenticated_client):
+        """Test that requests without X-Workspace-URL header are rejected."""
+        response = unauthenticated_client.get(
+            "/recipients",
+            headers={"Ocp-Apim-Subscription-Key": "test-key"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "X-Workspace-URL" in str(response.json())
+
+    def test_missing_subscription_key_header(self, unauthenticated_client):
+        """Test that requests without Ocp-Apim-Subscription-Key header are rejected."""
+        response = unauthenticated_client.get(
+            "/recipients",
+            headers={"X-Workspace-URL": "https://test.azuredatabricks.net/"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "Ocp-Apim-Subscription-Key" in str(response.json())
+
+    def test_missing_all_headers(self, unauthenticated_client):
+        """Test that requests without any auth headers are rejected."""
+        response = unauthenticated_client.get("/recipients")
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 class TestGetRecipient:
     """Tests for GET /recipients/{recipient_name} endpoint."""
 

@@ -7,16 +7,69 @@ from datetime import (
     timezone,
 )
 from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    Optional,
+)
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.testclient import TestClient as StarletteTestClient
 
 # Ensure tests can import from parent directory
 THIS_DIR = Path(__file__).parent
 TESTS_DIR = THIS_DIR.parent
 TESTS_DIR_PARENT = (TESTS_DIR / "..").resolve()
 sys.path.insert(0, str(TESTS_DIR_PARENT))
+
+# Default headers required for API authentication
+DEFAULT_TEST_HEADERS = {
+    "X-Workspace-URL": "https://test-workspace.azuredatabricks.net/",
+    "Ocp-Apim-Subscription-Key": "test-subscription-key-12345",
+}
+
+
+class AuthenticatedTestClient(StarletteTestClient):
+    """Test client that automatically includes required authentication headers."""
+
+    def __init__(self, *args: Any, default_headers: Optional[Dict[str, str]] = None, **kwargs: Any) -> None:
+        """Initialize with default headers."""
+        super().__init__(*args, **kwargs)
+        self._default_headers = default_headers or DEFAULT_TEST_HEADERS
+
+    def _merge_headers(self, headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        """Merge default headers with provided headers."""
+        merged = dict(self._default_headers)
+        if headers:
+            merged.update(headers)
+        return merged
+
+    def get(self, url: str, **kwargs: Any) -> Any:
+        """GET request with default headers."""
+        kwargs["headers"] = self._merge_headers(kwargs.get("headers"))
+        return super().get(url, **kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> Any:
+        """POST request with default headers."""
+        kwargs["headers"] = self._merge_headers(kwargs.get("headers"))
+        return super().post(url, **kwargs)
+
+    def put(self, url: str, **kwargs: Any) -> Any:
+        """PUT request with default headers."""
+        kwargs["headers"] = self._merge_headers(kwargs.get("headers"))
+        return super().put(url, **kwargs)
+
+    def delete(self, url: str, **kwargs: Any) -> Any:
+        """DELETE request with default headers."""
+        kwargs["headers"] = self._merge_headers(kwargs.get("headers"))
+        return super().delete(url, **kwargs)
+
+    def patch(self, url: str, **kwargs: Any) -> Any:
+        """PATCH request with default headers."""
+        kwargs["headers"] = self._merge_headers(kwargs.get("headers"))
+        return super().patch(url, **kwargs)
 
 
 @pytest.fixture
@@ -59,6 +112,13 @@ def app(mock_settings):
 
 @pytest.fixture
 def client(app):
-    """Create FastAPI test client."""
+    """Create FastAPI test client with default authentication headers."""
+    with AuthenticatedTestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def unauthenticated_client(app):
+    """Create FastAPI test client without authentication headers (for testing auth failures)."""
     with TestClient(app) as test_client:
         yield test_client

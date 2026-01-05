@@ -3,6 +3,39 @@
 from datetime import datetime
 
 
+class TestHealthEndpointsNoAuthRequired:
+    """Tests verifying health endpoints work without authentication."""
+
+    def test_health_check_no_auth_required(self, unauthenticated_client):
+        """Test that /health endpoint works without authentication headers."""
+        response = unauthenticated_client.get("/health")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+
+    def test_liveness_no_auth_required(self, unauthenticated_client):
+        """Test that /health/live endpoint works without authentication headers."""
+        response = unauthenticated_client.get("/health/live")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "alive"
+
+    def test_readiness_no_auth_required(self, unauthenticated_client):
+        """Test that /health/ready endpoint works without authentication headers."""
+        response = unauthenticated_client.get("/health/ready")
+
+        # Status can be 200 or 503 depending on config, but should not be 422
+        assert response.status_code in [200, 503]
+
+    def test_openapi_no_auth_required(self, unauthenticated_client):
+        """Test that /openapi.json endpoint works without authentication headers."""
+        response = unauthenticated_client.get("/openapi.json")
+
+        assert response.status_code == 200
+
+
 def test_health_check(client):
     """Test basic health check endpoint."""
     response = client.get("/health")
