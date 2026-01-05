@@ -71,13 +71,13 @@ repos:
           - --ignore-init-module-imports
 
   # Local hooks
-  - repo: local
-    hooks:
-      - id: regenerate-requirements
-        name: Regenerate requirements.txt
-        entry: python scripts/regenerate_requirements.py
-        language: python
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-        description: Regenerates requirements.txt from pip freeze
+  # - repo: local
+  #   hooks:
+  #     - id: regenerate-requirements
+  #       name: Regenerate requirements.txt
+  #       entry: python scripts/regenerate_requirements.py
+  #       language: python
+  #       pass_filenames: false
+  #       always_run: true
+  #       stages: [pre-commit]
+  #       description: Regenerates requirements.txt from pip freeze
