@@ -1,3 +1,5 @@
+"""Error handling for FastAPI application and Databricks SDK exceptions."""
+
 import pydantic
 from fastapi import (
     Request,
@@ -26,6 +28,16 @@ except ImportError:
     PermissionDenied = Exception  # type: ignore[misc, assignment]
     NotFound = Exception  # type: ignore[misc, assignment]
     BadRequest = Exception  # type: ignore[misc, assignment]
+
+# Explicit exports
+__all__ = [
+    "DATABRICKS_SDK_AVAILABLE",
+    "DatabricksError",
+    "handle_broad_exceptions",
+    "handle_databricks_errors",
+    "handle_databricks_connection_error",
+    "handle_pydantic_validation_errors",
+]
 
 
 # fastapi docs on middlewares: https://fastapi.tiangolo.com/tutorial/middleware/
