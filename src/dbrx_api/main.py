@@ -48,10 +48,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else:
                 logger.info("Key Vault loading skipped (no AZURE_KEYVAULT_URL set)")
         except Exception as e:
-            logger.error(f"Failed to load secrets from Key Vault: {e}")
-            raise
+            # Log error but don't crash - fall back to environment variables
+            logger.warning(f"Key Vault loading failed, falling back to environment variables: {e.__class__.__name__}")
+            logger.debug(f"Key Vault error details: {e}")
     else:
-        logger.warning("Key Vault module not available - using environment variables directly")
+        logger.info("Key Vault module not available - using environment variables directly")
 
     settings = settings or Settings()
 
