@@ -10,29 +10,17 @@ class TestShareAuthenticationHeaders:
 
     def test_missing_workspace_url_header(self, unauthenticated_client):
         """Test that requests without X-Workspace-URL header are rejected."""
-        response = unauthenticated_client.get(
-            "/shares",
-            headers={"Ocp-Apim-Subscription-Key": "test-key"},
-        )
+        response = unauthenticated_client.get("/shares")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert "X-Workspace-URL" in str(response.json())
 
-    def test_missing_subscription_key_header(self, unauthenticated_client):
-        """Test that requests without Ocp-Apim-Subscription-Key header are rejected."""
-        response = unauthenticated_client.get(
-            "/shares",
-            headers={"X-Workspace-URL": "https://test.azuredatabricks.net/"},
-        )
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "Ocp-Apim-Subscription-Key" in str(response.json())
-
     def test_missing_all_headers(self, unauthenticated_client):
-        """Test that requests without any auth headers are rejected."""
+        """Test that requests without required headers are rejected."""
         response = unauthenticated_client.get("/shares")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "X-Workspace-URL" in str(response.json())
 
 
 class TestWorkspaceUrlValidation:
@@ -44,7 +32,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://adb-1234567890123456.12.azuredatabricks.net",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
         # Should not fail on URL validation (may fail later on business logic)
@@ -56,7 +43,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://my-workspace.cloud.databricks.com",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
         # Should not fail on URL validation
@@ -68,7 +54,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://my-workspace.gcp.databricks.com",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
         # Should not fail on URL validation
@@ -80,7 +65,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://example.com",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
 
@@ -93,7 +77,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "http://test.azuredatabricks.net",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
 
@@ -106,7 +89,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://malicious-site.io/databricks",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
 
@@ -119,7 +101,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://fake-azuredatabricks.net.evil.com",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
 
@@ -131,7 +112,6 @@ class TestWorkspaceUrlValidation:
             "/shares",
             headers={
                 "X-Workspace-URL": "https://test-workspace.azuredatabricks.net/",
-                "Ocp-Apim-Subscription-Key": "test-key",
             },
         )
         # Should not fail on URL validation
@@ -152,7 +132,6 @@ class TestWorkspaceUrlValidation:
                 "/shares",
                 headers={
                     "X-Workspace-URL": "https://fake.azuredatabricks.net",
-                    "Ocp-Apim-Subscription-Key": "test-key",
                 },
             )
 
@@ -173,7 +152,6 @@ class TestWorkspaceUrlValidation:
                 "/shares",
                 headers={
                     "X-Workspace-URL": "https://slow-workspace.azuredatabricks.net",
-                    "Ocp-Apim-Subscription-Key": "test-key",
                 },
             )
 
@@ -417,6 +395,16 @@ class TestAddDataObjectsToShare:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_add_data_objects_generic_error(self, client, mock_share_business_logic):
+        """Test adding data objects with a generic error."""
+        mock_share_business_logic["add_objects"].return_value = "Some unexpected error occurred"
+
+        payload = {"tables": ["catalog.schema.table1"]}
+        response = client.put("/shares/test_share/dataobject/add", json=payload)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Some unexpected error" in response.json()["detail"]
+
 
 class TestRevokeDataObjectsFromShare:
     """Tests for PUT /shares/{share_name}/dataobject/revoke endpoint."""
@@ -469,6 +457,26 @@ class TestRevokeDataObjectsFromShare:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_revoke_data_objects_cannot_remove_schemas(self, client, mock_share_business_logic):
+        """Test revoking with 'Cannot remove schemas' error."""
+        mock_share_business_logic["revoke_objects"].return_value = "Cannot remove schemas from share"
+
+        payload = {"tables": ["catalog.schema.table1"]}
+        response = client.put("/shares/test_share/dataobject/revoke", json=payload)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Cannot remove schemas" in response.json()["detail"]
+
+    def test_revoke_data_objects_generic_error(self, client, mock_share_business_logic):
+        """Test revoking with a generic error."""
+        mock_share_business_logic["revoke_objects"].return_value = "Some unexpected revocation error"
+
+        payload = {"tables": ["catalog.schema.table1"]}
+        response = client.put("/shares/test_share/dataobject/revoke", json=payload)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Some unexpected revocation error" in response.json()["detail"]
+
 
 class TestAddRecipientToShare:
     """Tests for PUT /shares/{share_name}/recipients/add endpoint."""
@@ -514,6 +522,15 @@ class TestAddRecipientToShare:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    def test_add_recipient_generic_error(self, client, mock_share_business_logic):
+        """Test adding recipient with a generic error."""
+        mock_share_business_logic["add_recipients"].return_value = "Some unexpected add recipient error"
+
+        response = client.put("/shares/test_share/recipients/add", params={"recipient_name": "test_recipient"})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Some unexpected add recipient error" in response.json()["detail"]
+
 
 class TestRemoveRecipientFromShare:
     """Tests for PUT /shares/{share_name}/recipients/remove endpoint."""
@@ -552,6 +569,15 @@ class TestRemoveRecipientFromShare:
         response = client.put("/shares/test_share/recipients/remove", params={"recipient_name": "test_recipient"})
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_remove_recipient_generic_error(self, client, mock_share_business_logic):
+        """Test removing recipient with a generic error."""
+        mock_share_business_logic["remove_recipients"].return_value = "Some unexpected remove recipient error"
+
+        response = client.put("/shares/test_share/recipients/remove", params={"recipient_name": "test_recipient"})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Some unexpected remove recipient error" in response.json()["detail"]
 
 
 class TestDatabricksErrorHandling:

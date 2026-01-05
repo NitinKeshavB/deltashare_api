@@ -152,7 +152,7 @@ async def get_workspace_url(
     x_workspace_url: str = Header(
         ...,
         alias="X-Workspace-URL",
-        description="Databricks workspace URL (e.g., https://adb-xxx.azuredatabricks.net)",
+        description="<small>*HTTPS URL of Databricks workspace*</small>",
         example="https://adb-1234567890123456.12.azuredatabricks.net",
     ),
 ) -> str:
@@ -224,38 +224,51 @@ async def get_workspace_url(
     return url_normalized
 
 
-async def verify_subscription_key(
-    ocp_apim_subscription_key: str = Header(
-        ...,
-        alias="Ocp-Apim-Subscription-Key",
-        description="Azure API Management subscription key for API authentication",
+async def verify_apim_request(
+    request: Request,
+    x_apim_request: str
+    | None = Header(
+        None,
+        alias="X-APIM-Request",
+        description="Header set by Azure API Management to identify requests from APIM",
     ),
-) -> str:
+) -> bool:
     """
-    Verify subscription key header is present.
+    Verify request is coming from Azure API Management.
 
-    Azure API Management validates the actual key value externally.
-    This dependency ensures the header is present as defense in depth.
+    This is optional - if you want to enforce APIM-only access, configure
+    APIM to add a secret header (X-APIM-Secret) and validate it here.
+
+    For now, this just logs whether the request came through APIM.
 
     Parameters
     ----------
-    ocp_apim_subscription_key : str
-        Subscription key from Ocp-Apim-Subscription-Key header
+    request : Request
+        FastAPI request object
+    x_apim_request : str | None
+        Optional header indicating request came through APIM
 
     Returns
     -------
-    str
-        The subscription key value
+    bool
+        True if request is from APIM
 
-    Raises
-    ------
-    HTTPException
-        If header is missing or empty
+    Notes
+    -----
+    To enable strict APIM validation:
+    1. Configure APIM to set policy: set-header name="X-APIM-Secret" value="{{secret}}"
+    2. Set APIM_SECRET environment variable in Web App
+    3. Uncomment validation code below
     """
-    if not ocp_apim_subscription_key or not ocp_apim_subscription_key.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Subscription key is required",
-        )
+    # Optional: Validate APIM secret header
+    # apim_secret = os.getenv("APIM_SECRET")
+    # x_apim_secret = request.headers.get("X-APIM-Secret")
+    # if apim_secret and x_apim_secret != apim_secret:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Direct access not allowed. Please use API Management.",
+    #     )
 
-    return ocp_apim_subscription_key.strip()
+    is_from_apim = x_apim_request is not None
+    logger.debug(f"Request from APIM: {is_from_apim}")
+    return is_from_apim

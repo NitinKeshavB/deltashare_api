@@ -17,10 +17,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from dbrx_api.dependencies import (
-    get_workspace_url,
-    verify_subscription_key,
-)
+from dbrx_api.dependencies import get_workspace_url
 from dbrx_api.dltshr.share import add_data_object_to_share
 from dbrx_api.dltshr.share import add_recipients_to_share as adding_recipients_to_share
 from dbrx_api.dltshr.share import create_share as create_share_func
@@ -54,7 +51,6 @@ async def get_shares_by_name(
     share_name: str,
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Retrieve detailed information for a specific Delta Sharing share by name."""
     logger.info("Getting share by name", share_name=share_name, workspace_url=workspace_url)
@@ -103,7 +99,6 @@ async def list_shares_all_or_with_prefix(
     response: Response,
     query_params: GetSharesQueryParams = Depends(),
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ):
     """List all Delta Sharing shares with optional prefix filtering and pagination."""
     logger.info(
@@ -155,7 +150,6 @@ async def delete_share_by_name(
     request: Request,
     share_name: str,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ):
     """Permanently delete a Delta Sharing share and all its associated permissions."""
     logger.info(
@@ -213,7 +207,6 @@ async def create_share(
     description: str,
     storage_root: Optional[str] = None,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Create a new Delta Sharing share for Databricks-to-Databricks data sharing."""
     logger.info(
@@ -305,7 +298,6 @@ async def add_data_objects_to_share(
         },
     ),
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Add data objects (tables, views, schemas) to an existing Delta Sharing share."""
     logger.info(
@@ -403,7 +395,6 @@ async def revoke_data_objects_from_share(
         },
     ),
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> ShareInfo:
     """Remove data objects (tables, views, schemas) from a Delta Sharing share."""
     logger.info(
@@ -492,7 +483,6 @@ async def add_recipient_to_share(
     request: Request,
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> UpdateSharePermissionsResponse:
     """Grant SELECT permission to a recipient for a Delta Sharing share."""
     logger.info(
@@ -573,7 +563,6 @@ async def remove_recipients_from_share(
     request: Request,
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> UpdateSharePermissionsResponse:
     """Revoke SELECT permission from a recipient for a Delta Sharing share."""
     logger.info(

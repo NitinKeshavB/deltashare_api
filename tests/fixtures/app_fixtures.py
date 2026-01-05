@@ -27,7 +27,6 @@ sys.path.insert(0, str(TESTS_DIR_PARENT))
 # Default headers required for API authentication
 DEFAULT_TEST_HEADERS = {
     "X-Workspace-URL": "https://test-workspace.azuredatabricks.net/",
-    "Ocp-Apim-Subscription-Key": "test-subscription-key-12345",
 }
 
 

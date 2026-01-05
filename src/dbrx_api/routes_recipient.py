@@ -19,10 +19,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from dbrx_api.dependencies import (
-    get_workspace_url,
-    verify_subscription_key,
-)
+from dbrx_api.dependencies import get_workspace_url
 from dbrx_api.dltshr.recipient import add_recipient_ip
 from dbrx_api.dltshr.recipient import create_recipient_d2d as create_recipient_for_d2d
 from dbrx_api.dltshr.recipient import create_recipient_d2o as create_recipient_for_d2o
@@ -57,7 +54,6 @@ async def get_recipients(
     recipient_name: str,
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Get a specific recipient by name."""
     logger.info(
@@ -112,7 +108,6 @@ async def list_recipients_all(
     response: Response,
     query_params: GetRecipientsQueryParams = Depends(),
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ):
     """List all recipients or with optional prefix filtering."""
     logger.info(
@@ -170,7 +165,6 @@ async def delete_recipient_by_name(
     request: Request,
     recipient_name: str,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ):
     """Delete a Recipient."""
     logger.info(
@@ -226,7 +220,6 @@ async def create_recipient_databricks_to_databricks(
     description: str,
     sharing_code: Optional[str] = None,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Create a recipient for Databricks to Databricks sharing."""
     logger.info(
@@ -303,7 +296,6 @@ async def create_recipient_databricks_to_opensharing(
     description: str,
     ip_access_list: Optional[List[str]] = None,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Create a recipient for Databricks to Databricks sharing."""
     logger.info(
@@ -378,7 +370,6 @@ async def rotate_recipient_tokens(
     recipient_name: str,
     expire_in_seconds: int = 0,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Rotate a recipient token for Databricks to opensharing protocol."""
     logger.info(
@@ -465,7 +456,6 @@ async def add_client_ip_to_databricks_opensharing(
     ip_access_list: List[str],
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ):
     """Add IP to access list for Databricks to opensharing protocol."""
     logger.info(
@@ -555,7 +545,6 @@ async def revoke_client_ip_from_databricks_opensharing(
     ip_access_list: List[str],
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """revoke IP to access list for Databricks to opensharing protocol."""
     logger.info(
@@ -676,7 +665,6 @@ async def update_recipients_description(
     description: str,
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Rotate a recipient token for Databricks to opensharing protocol."""
     logger.info(
@@ -750,7 +738,6 @@ async def update_recipients_expiration_time(
     expiration_time_in_days: int,
     response: Response,
     workspace_url: str = Depends(get_workspace_url),
-    _: str = Depends(verify_subscription_key),
 ) -> RecipientInfo:
     """Rotate a recipient token for Databricks to opensharing protocol."""
     logger.info(

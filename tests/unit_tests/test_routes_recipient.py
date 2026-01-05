@@ -15,29 +15,17 @@ class TestRecipientAuthenticationHeaders:
 
     def test_missing_workspace_url_header(self, unauthenticated_client):
         """Test that requests without X-Workspace-URL header are rejected."""
-        response = unauthenticated_client.get(
-            "/recipients",
-            headers={"Ocp-Apim-Subscription-Key": "test-key"},
-        )
+        response = unauthenticated_client.get("/recipients")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert "X-Workspace-URL" in str(response.json())
 
-    def test_missing_subscription_key_header(self, unauthenticated_client):
-        """Test that requests without Ocp-Apim-Subscription-Key header are rejected."""
-        response = unauthenticated_client.get(
-            "/recipients",
-            headers={"X-Workspace-URL": "https://test.azuredatabricks.net/"},
-        )
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "Ocp-Apim-Subscription-Key" in str(response.json())
-
     def test_missing_all_headers(self, unauthenticated_client):
-        """Test that requests without any auth headers are rejected."""
+        """Test that requests without required headers are rejected."""
         response = unauthenticated_client.get("/recipients")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "X-Workspace-URL" in str(response.json())
 
 
 class TestGetRecipient:
@@ -175,13 +163,10 @@ class TestCreateRecipientD2D:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "already exists" in response.json()["detail"].lower()
 
-    @pytest.mark.skip(reason="TODO: Fix error handling - currently returns 500 instead of 400")
     def test_create_d2d_recipient_invalid_identifier(self, client, mock_recipient_business_logic):
         """Test creation with invalid recipient identifier."""
         mock_recipient_business_logic["get"].return_value = None
-        mock_recipient_business_logic[
-            "create_d2d"
-        ].return_value = "Invalid recipient identifier - must be a valid Databricks metastore ID"
+        mock_recipient_business_logic["create_d2d"].return_value = "Invalid recipient_identifier format: invalid-id"
 
         response = client.post(
             "/recipients/d2d/new_recipient",
@@ -192,6 +177,7 @@ class TestCreateRecipientD2D:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Invalid recipient_identifier" in response.json()["detail"]
 
 
 class TestCreateRecipientD2O:
@@ -243,6 +229,37 @@ class TestCreateRecipientD2O:
 
         assert response.status_code == status.HTTP_201_CREATED
 
+    @pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
+    def test_create_d2o_recipient_with_valid_ips(self, client, mock_recipient_business_logic):
+        """Test creation with valid IP access list."""
+        mock_recipient_business_logic["get"].return_value = None
+
+        response = client.post(
+            "/recipients/d2o/new_recipient",
+            params={
+                "description": "Test recipient",
+                "ip_access_list": ["192.168.1.100", "10.0.0.0/24"],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    @pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
+    def test_create_d2o_recipient_with_invalid_ips(self, client, mock_recipient_business_logic):
+        """Test creation with invalid IP addresses."""
+        mock_recipient_business_logic["get"].return_value = None
+
+        response = client.post(
+            "/recipients/d2o/new_recipient",
+            params={
+                "description": "Test recipient",
+                "ip_access_list": ["invalid-ip", "999.999.999.999"],
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Invalid IP addresses or CIDR blocks" in response.json()["detail"]
+
 
 class TestRotateRecipientToken:
     """Tests for PUT /recipients/{recipient_name}/tokens/rotate endpoint."""
@@ -290,7 +307,7 @@ class TestRotateRecipientToken:
         assert response.status_code == status.HTTP_200_OK
 
 
-@pytest.mark.skip(reason="TODO: Fix List[str] parameter passing - needs correct request format")
+@pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
 class TestAddClientIPToRecipient:
     """Tests for PUT /recipients/{recipient_name}/ipaddress/add endpoint."""
 
@@ -311,9 +328,7 @@ class TestAddClientIPToRecipient:
             name="test_recipient", auth_type=AuthenticationType.TOKEN
         )
 
-        response = client.put(
-            "/recipients/test_recipient/ipaddress/add", params={"ip_access_list": ["192.168.1.0/24"]}
-        )
+        response = client.put("/recipients/test_recipient/ipaddress/add?ip_access_list=192.168.1.0/24")
 
         assert response.status_code == status.HTTP_200_OK
 
@@ -321,9 +336,7 @@ class TestAddClientIPToRecipient:
         """Test adding IP to non-existent recipient."""
         mock_recipient_business_logic["get"].return_value = None
 
-        response = client.put(
-            "/recipients/nonexistent_recipient/ipaddress/add", params={"ip_access_list": ["192.168.1.100"]}
-        )
+        response = client.put("/recipients/nonexistent_recipient/ipaddress/add?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -333,7 +346,7 @@ class TestAddClientIPToRecipient:
             name="d2d_recipient", auth_type=AuthenticationType.DATABRICKS
         )
 
-        response = client.put("/recipients/d2d_recipient/ipaddress/add", params={"ip_access_list": ["192.168.1.100"]})
+        response = client.put("/recipients/d2d_recipient/ipaddress/add?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "DATABRICKS authentication" in response.json()["detail"]
@@ -344,13 +357,13 @@ class TestAddClientIPToRecipient:
             name="test_recipient", auth_type=AuthenticationType.TOKEN
         )
 
-        response = client.put("/recipients/test_recipient/ipaddress/add", params={"ip_access_list": ["invalid-ip"]})
+        response = client.put("/recipients/test_recipient/ipaddress/add?ip_access_list=invalid-ip")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Invalid IP address" in response.json()["detail"]
 
 
-@pytest.mark.skip(reason="TODO: Fix List[str] parameter passing - needs correct request format")
+@pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
 class TestRevokeClientIPFromRecipient:
     """Tests for PUT /recipients/{recipient_name}/ipaddress/revoke endpoint."""
 
@@ -360,9 +373,7 @@ class TestRevokeClientIPFromRecipient:
             name="test_recipient", auth_type=AuthenticationType.TOKEN
         )
 
-        response = client.put(
-            "/recipients/test_recipient/ipaddress/revoke", params={"ip_access_list": ["192.168.1.100"]}
-        )
+        response = client.put("/recipients/test_recipient/ipaddress/revoke?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_200_OK
         mock_recipient_business_logic["revoke_ip"].assert_called_once()
@@ -371,9 +382,7 @@ class TestRevokeClientIPFromRecipient:
         """Test revoking IP from non-existent recipient."""
         mock_recipient_business_logic["get"].return_value = None
 
-        response = client.put(
-            "/recipients/nonexistent_recipient/ipaddress/revoke", params={"ip_access_list": ["192.168.1.100"]}
-        )
+        response = client.put("/recipients/nonexistent_recipient/ipaddress/revoke?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -383,11 +392,10 @@ class TestRevokeClientIPFromRecipient:
             name="d2d_recipient", auth_type=AuthenticationType.DATABRICKS
         )
 
-        response = client.put(
-            "/recipients/d2d_recipient/ipaddress/revoke", params={"ip_access_list": ["192.168.1.100"]}
-        )
+        response = client.put("/recipients/d2d_recipient/ipaddress/revoke?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "DATABRICKS authentication" in response.json()["detail"]
 
     def test_revoke_ip_invalid_format(self, client, mock_recipient_business_logic, mock_recipient_info):
         """Test revoking invalid IP address."""
@@ -395,9 +403,10 @@ class TestRevokeClientIPFromRecipient:
             name="test_recipient", auth_type=AuthenticationType.TOKEN
         )
 
-        response = client.put("/recipients/test_recipient/ipaddress/revoke", params={"ip_access_list": ["invalid-ip"]})
+        response = client.put("/recipients/test_recipient/ipaddress/revoke?ip_access_list=invalid-ip")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Invalid IP address" in response.json()["detail"]
 
 
 class TestUpdateRecipientDescription:
