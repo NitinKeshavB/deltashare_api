@@ -85,17 +85,27 @@ make publish-prod
 ### Core Structure
 ```
 src/dbrx_api/
-├── main.py              # FastAPI app creation and configuration
-├── settings.py          # Pydantic settings (reads from env vars)
-├── schemas.py           # Request/response models
-├── errors.py            # Global error handlers
-├── routes_share.py      # Share-related API endpoints
-├── routes_recipient.py  # Recipient-related API endpoints
+├── main.py                  # FastAPI app creation and configuration
+├── settings.py              # Pydantic settings (reads from env vars)
+├── schemas.py               # Request/response models
+├── errors.py                # Global error handlers
+├── dependencies.py          # FastAPI dependencies (workspace URL validation, auth)
+├── routes_share.py          # Share-related API endpoints
+├── routes_recipient.py      # Recipient-related API endpoints
+├── routes_health.py         # Health check endpoints
 ├── dbrx_auth/
-│   └── token_gen.py     # Databricks authentication token generation
-└── dltshr/
-    ├── share.py         # Share business logic (Databricks SDK calls)
-    └── recipient.py     # Recipient business logic (Databricks SDK calls)
+│   ├── token_gen.py         # Databricks authentication token generation
+│   └── token_manager.py     # Token caching and management
+├── dltshr/
+│   ├── share.py             # Share business logic (Databricks SDK calls)
+│   └── recipient.py         # Recipient business logic (Databricks SDK calls)
+├── monitoring/
+│   ├── logger.py            # Loguru configuration with Azure Blob/PostgreSQL sinks
+│   ├── request_context.py   # Request context middleware for logging
+│   ├── azure_blob_handler.py    # Azure Blob Storage log handler
+│   └── postgresql_handler.py    # PostgreSQL log handler
+└── keyvault/
+    └── client.py            # Azure Key Vault secret loader
 ```
 
 ### Application Layers
@@ -104,6 +114,7 @@ src/dbrx_api/
    - FastAPI route handlers
    - Request validation and response serialization
    - Calls business logic functions from `dltshr/` modules
+   - Uses dependencies for workspace URL validation and subscription key verification
 
 2. **Business Logic Layer** (`dltshr/`)
    - `share.py`: Share operations (create, delete, add/remove data objects, manage recipients)
@@ -113,29 +124,63 @@ src/dbrx_api/
 
 3. **Configuration**
    - `Settings` class uses `pydantic_settings` to load from environment variables
-   - Required env var: `dltshr_workspace_url` (Databricks workspace URL)
    - Settings are attached to FastAPI app state: `request.app.state.settings`
+   - **IMPORTANT**: `dltshr_workspace_url` in Settings is deprecated - use `X-Workspace-URL` header instead
+
+4. **Monitoring & Logging**
+   - Structured logging with `loguru`
+   - Request context middleware captures: request ID, client IP, user identity, user agent, request path
+   - Optional Azure Blob Storage sink for persistent logs
+   - Optional PostgreSQL sink for critical logs (WARNING and above)
 
 ### Key Patterns
 
-- **Authentication**: Each business logic function obtains a session token via `get_auth_token(datetime.now(timezone.utc))[0]` and creates a `WorkspaceClient`. Tokens are cached in memory with 5-minute refresh buffer before expiry.
-- **Router Registration**: Two routers (`ROUTER_SHARE`, `ROUTER_RECIPIENT`) are registered in `main.py`
+- **Per-Request Workspace URLs**: Each API request includes `X-Workspace-URL` header specifying the Databricks workspace. The dependency `get_workspace_url()` validates:
+  - URL is HTTPS
+  - Matches valid Databricks patterns (Azure: `*.azuredatabricks.net`, AWS: `*.cloud.databricks.com`, GCP: `*.gcp.databricks.com`)
+  - Workspace is reachable (DNS resolution + HTTP HEAD request)
+
+- **Authentication Layers**:
+  1. Azure API Management validates `Ocp-Apim-Subscription-Key` header
+  2. FastAPI dependency `verify_subscription_key()` ensures header is present (defense in depth)
+  3. Databricks workspace authentication via OAuth2 tokens (service principal credentials)
+
+- **Token Management**:
+  - OAuth tokens obtained via `get_auth_token(datetime.now(timezone.utc))[0]`
+  - Tokens cached with 5-minute refresh buffer before expiry
+  - Cached tokens stored in `.env` file during development
+
+- **Secret Management**:
+  - Local development: Use `.env` file
+  - Azure deployment: Secrets loaded from Azure Key Vault via `keyvault.client.load_secrets_from_keyvault()` at startup
+  - Key Vault secrets converted from hyphen-case to UPPER_SNAKE_CASE env vars (e.g., `client-id` → `CLIENT_ID`)
+
+- **Router Registration**: Three routers (`ROUTER_HEALTH`, `ROUTER_SHARE`, `ROUTER_RECIPIENT`) registered in `main.py`
+
 - **Error Handling**:
-  - Global middleware catches broad exceptions
-  - Custom handler for Pydantic validation errors
+  - Global middleware catches broad exceptions → 500 Internal Server Error
+  - Pydantic validation errors → 422 Unprocessable Entity
+  - Databricks SDK errors mapped to appropriate HTTP status codes:
+    - `Unauthenticated` → 401
+    - `PermissionDenied` → 403
+    - `NotFound` → 404
+    - `BadRequest` → 400
+    - Other `DatabricksError` → 502 Bad Gateway
   - Service layer returns `ShareInfo | str` or `RecipientInfo | str` - string indicates error
-  - Routes map error strings to appropriate HTTP status codes (409 for conflicts, 403 for permissions, 404 for not found, 400 for bad requests)
+
 - **OpenAPI Customization**: Custom `operationId` generator creates prettier function names for generated SDKs
+
 - **Response Field Naming**: Use PascalCase for API response fields (`Message`, `Share`, `Recipient`), snake_case for request bodies and internal fields
 
 ### Dependencies
 
-- **Core**: `fastapi`, `pydantic`, `pydantic_settings`, `dotenv`, `typing-extensions`
+- **Core**: `fastapi`, `pydantic`, `pydantic_settings`, `dotenv`, `typing-extensions`, `loguru`
 - **Optional groups**:
   - `[dbrx]`: `databricks-sdk` (required for actual functionality)
   - `[api]`: `uvicorn` (required to run the server)
-  - `[azure]`: `azure-storage-blob`, `azure-identity`
-  - `[test]`: `pytest`, `pytest-cov`
+  - `[azure]`: `azure-storage-blob`, `azure-identity`, `azure-keyvault-secrets`, `asyncpg`
+  - `[test]`: `pytest`, `pytest-cov`, `httpx`, `pytest-asyncio`
+  - `[release]`: `build`, `twine`
   - `[static-code-qa]`: linting/formatting tools
   - `[dev]`: All optional dependencies combined
 
@@ -188,9 +233,12 @@ Object types: `TABLE`, `VIEW`, `SCHEMA` (from `SharedDataObjectDataObjectType`)
 
 ## Important Notes
 
-- The package is named `deltashare_api` but the module is `dbrx_api` - be aware of this mismatch when importing
-- The API docs are served at the root URL (`/`) for easy access
-- Version is read from `version.txt` file dynamically
-- Pre-commit hook prevents direct commits to `main` branch (skipped in CI with `SKIP=no-commit-to-branch`)
-- Environment-specific configuration via `.env` files (not committed) or Azure App Configuration
-- Required environment variables for authentication: `CLIENT_ID`, `CLIENT_SECRET`, `ACCOUNT_ID`, `dltshr_workspace_url`
+- **Package vs Module Name**: The package is named `deltashare_api` but the module is `dbrx_api` - be aware of this mismatch when importing
+- **API Documentation**: The API docs are served at the root URL (`/`) for easy access
+- **Version Management**: Version is read from `version.txt` file dynamically
+- **Git Workflow**: Pre-commit hook prevents direct commits to `main` branch (skipped in CI with `SKIP=no-commit-to-branch`)
+- **Environment Configuration**:
+  - Local: `.env` file (not committed)
+  - Azure: App Configuration or Key Vault
+  - Required env vars: `CLIENT_ID`, `CLIENT_SECRET`, `ACCOUNT_ID`
+- **Workspace URL Pattern**: Use `X-Workspace-URL` header for per-request workspace specification (deprecates `dltshr_workspace_url` env var)
