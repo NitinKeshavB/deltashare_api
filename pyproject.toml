@@ -35,8 +35,20 @@ where = ["src"]
 [project.optional-dependencies]
 dbrx = ["databricks-sdk"]
 api = ["uvicorn"]
-azure = ["azure-storage-blob", "azure-identity", "asyncpg"]
-test = ["deltashare_api[dbrx]","pytest", "pytest-cov", "httpx", "pytest-asyncio", "uvicorn"]
+azure = [
+    "azure-storage-blob",
+    "azure-identity",
+    "azure-keyvault-secrets",
+    "asyncpg",
+]
+test = [
+    "deltashare_api[dbrx]",
+    "pytest",
+    "pytest-cov",
+    "httpx",
+    "pytest-asyncio",
+    "uvicorn",
+]
 release = ["build", "twine"]
 static-code-qa = [
     "pre-commit",

@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     All variable names are case-insensitive.
     """
 
-    # Databricks Workspace Configuration
-    dltshr_workspace_url: str
-    """Databricks Delta Sharing workspace URL (required)."""
+    # Databricks Workspace Configuration (DEPRECATED - use X-Workspace-URL header instead)
+    dltshr_workspace_url: Optional[str] = None
+    """Databricks workspace URL for reference/logging only. Actual workspace URL comes from X-Workspace-URL header."""
 
     # Databricks Authentication (Service Principal)
     client_id: str

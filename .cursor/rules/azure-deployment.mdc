@@ -119,12 +119,12 @@ def load_environment():
 
 ### Application Settings (Azure Portal / ARM)
 
-| Setting | Dev | UAT | Prod |
-|---------|-----|-----|------|
-| `ENVIRONMENT` | dev | uat | prod |
-| `DEBUG` | true | false | false |
-| `WEBSITES_PORT` | 8000 | 8000 | 8000 |
-| `SCM_DO_BUILD_DURING_DEPLOYMENT` | true | true | true |
+| Setting                          | Dev  | UAT   | Prod  |
+| -------------------------------- | ---- | ----- | ----- |
+| `ENVIRONMENT`                    | dev  | uat   | prod  |
+| `DEBUG`                          | true | false | false |
+| `WEBSITES_PORT`                  | 8000 | 8000  | 8000  |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | true | true  | true  |
 
 ### Startup Command
 ```bash
@@ -374,25 +374,122 @@ def configure_logging(environment: str):
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 ```
 
-## Secrets Management
+## Secrets Management with Azure Key Vault
 
-### Azure Key Vault Integration
-```python
-# secrets/keyvault.py
-from azure.keyvault.secrets import SecretClient
-from azure.identity import DefaultAzureCredential
+### How Key Vault Integration Works
 
-def get_secret(vault_url: str, secret_name: str) -> str:
-    """Retrieve secret from Azure Key Vault."""
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=vault_url, credential=credential)
-    return client.get_secret(secret_name).value
+The application automatically loads secrets from Azure Key Vault when deployed:
+
+1. **Local Development**: Uses `.env` file (no `AZURE_KEYVAULT_URL` set)
+2. **Azure Deployment**: Set `AZURE_KEYVAULT_URL` app setting, all secrets loaded from Key Vault
+
+```mermaid
+flowchart TD
+    Start[App Starts] --> Check{AZURE_KEYVAULT_URL set?}
+    Check -->|Yes| LoadKV[Load ALL secrets from Key Vault]
+    Check -->|No| LoadEnv[Load from .env file]
+    LoadKV --> SetEnv[Set as environment variables]
+    LoadEnv --> Settings[Initialize Settings class]
+    SetEnv --> Settings
 ```
 
-### Required Secrets
-| Secret | Description |
-|--------|-------------|
-| `databricks-client-id` | Databricks service principal client ID |
-| `databricks-client-secret` | Databricks service principal secret |
-| `db-password` | PostgreSQL database password |
-| `queue-connection-string` | Azure Queue connection string |
+### Key Vault Client Module
+
+Located at `src/dbrx_api/keyvault/client.py`:
+
+```python
+from dbrx_api.keyvault import load_secrets_from_keyvault
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    # Load secrets BEFORE Settings() initialization
+    load_secrets_from_keyvault()
+
+    settings = settings or Settings()
+    # ... rest of app
+```
+
+### Secret Naming Convention
+
+Key Vault secrets use hyphens, converted to UPPER_SNAKE_CASE for environment variables:
+
+| Key Vault Secret Name          | Environment Variable           |
+| ------------------------------ | ------------------------------ |
+| `client-id`                    | `CLIENT_ID`                    |
+| `client-secret`                | `CLIENT_SECRET`                |
+| `account-id`                   | `ACCOUNT_ID`                   |
+| `azure-storage-account-url`    | `AZURE_STORAGE_ACCOUNT_URL`    |
+| `postgresql-connection-string` | `POSTGRESQL_CONNECTION_STRING` |
+| `enable-blob-logging`          | `ENABLE_BLOB_LOGGING`          |
+| `enable-postgresql-logging`    | `ENABLE_POSTGRESQL_LOGGING`    |
+| `postgresql-min-log-level`     | `POSTGRESQL_MIN_LOG_LEVEL`     |
+| `azure-storage-logs-container` | `AZURE_STORAGE_LOGS_CONTAINER` |
+| `postgresql-log-table`         | `POSTGRESQL_LOG_TABLE`         |
+
+**Note**: `dltshr-workspace-url` is NOT stored in Key Vault - it comes from the `X-Workspace-URL` request header per API call.
+
+### Azure Web App Configuration for Key Vault
+
+Only ONE App Setting required in Azure Portal:
+
+```
+AZURE_KEYVAULT_URL=https://deltashare-kv-prod.vault.azure.net/
+```
+
+All other secrets are loaded automatically from Key Vault.
+
+### Azure Setup Requirements
+
+1. **Enable Managed Identity** on Azure Web App:
+   - Go to Web App → Identity → System assigned → Status: On
+
+2. **Grant Key Vault Access**:
+   - Go to Key Vault → Access policies → Add Access Policy
+   - Secret permissions: Get, List
+   - Select principal: Your Web App's Managed Identity
+
+3. **Add Secrets to Key Vault**:
+   - Use hyphenated names (e.g., `client-id`, `client-secret`)
+   - All secrets from your `.env` file should be added
+
+### Local Development with Key Vault (Optional)
+
+If you want to test Key Vault locally:
+
+```bash
+# Option 1: Azure CLI authentication
+az login
+export AZURE_KEYVAULT_URL=https://deltashare-kv-dev.vault.azure.net/
+
+# Option 2: Service Principal (in .env)
+AZURE_KEYVAULT_URL=https://deltashare-kv-dev.vault.azure.net/
+AZURE_CLIENT_ID=<sp-client-id>
+AZURE_CLIENT_SECRET=<sp-secret>
+AZURE_TENANT_ID=<tenant-id>
+```
+
+### Fetching Individual Secrets On-Demand
+
+```python
+from dbrx_api.keyvault.client import get_secret_from_keyvault
+
+# Returns None if Key Vault not configured (local dev)
+secret_value = get_secret_from_keyvault("my-secret-name")
+```
+
+### Required Secrets Summary
+
+| Secret                         | Description                            | Required | Example Value                  |
+| ------------------------------ | -------------------------------------- | -------- | ------------------------------ |
+| `client-id`                    | Databricks service principal client ID | Yes      | `e04058ec-8264-...`            |
+| `client-secret`                | Databricks service principal secret    | Yes      | `abc~xyz123...`                |
+| `account-id`                   | Databricks account ID                  | Yes      | `12345678-1234-...`            |
+| `azure-storage-account-url`    | Blob storage URL for logs              | No       | `https://storage.blob...`      |
+| `postgresql-connection-string` | Database connection string             | No       | `postgresql://user:pass@...`   |
+| `enable-blob-logging`          | Enable Azure Blob logging              | No       | `true` or `false`              |
+| `enable-postgresql-logging`    | Enable PostgreSQL logging              | No       | `true` or `false`              |
+| `postgresql-min-log-level`     | Minimum log level for PostgreSQL       | No       | `WARNING`, `ERROR`, `CRITICAL` |
+| `azure-storage-logs-container` | Blob container name for logs           | No       | `deltashare-logs`              |
+| `postgresql-log-table`         | PostgreSQL table name for logs         | No       | `application_logs`             |
+
+**Excluded from Key Vault** (comes from request headers):
+- `X-Workspace-URL` header → Databricks workspace URL per request

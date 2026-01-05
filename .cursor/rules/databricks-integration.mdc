@@ -1,10 +1,56 @@
 ---
 description: Databricks Delta Sharing SDK patterns - authentication, WorkspaceClient, error handling
-globs: ["**/dltshr/**/*.py", "**/dbrx_auth/**/*.py", "**/services/**/*.py", "**/jobs/**/*.py"]
+globs: ["**/dltshr/**/*.py", "**/dbrx_auth/**/*.py", "**/services/**/*.py", "**/jobs/**/*.py", "**/dependencies.py"]
 alwaysApply: false
 ---
 
 # Databricks Integration Patterns
+
+## Workspace URL from Request Headers
+
+**IMPORTANT**: The Databricks workspace URL is passed per-request via the `X-Workspace-URL` header, NOT from application settings.
+
+### Architecture
+- **Settings** (`dltshr_workspace_url`): Used only for logging/reference at startup
+- **API Requests**: Workspace URL comes from `X-Workspace-URL` header
+- This allows the API to connect to different Databricks workspaces per request
+
+### Dependency Pattern
+```python
+# dependencies.py
+from fastapi import Header, HTTPException, status
+
+async def get_workspace_url(
+    x_workspace_url: str = Header(
+        ...,
+        alias="X-Workspace-URL",
+        description="Databricks workspace URL",
+        example="https://adb-1234567890123456.12.azuredatabricks.net",
+    ),
+) -> str:
+    """Extract and validate workspace URL from header."""
+    # Validates URL format (Azure, AWS, GCP patterns)
+    # Checks workspace is reachable
+    return url_normalized
+```
+
+### Using in Routes
+```python
+from dbrx_api.dependencies import get_workspace_url
+
+@ROUTER_SHARE.get("/shares/{share_name}")
+async def get_shares_by_name(
+    share_name: str,
+    workspace_url: str = Depends(get_workspace_url),  # From header!
+) -> ShareInfo:
+    share = get_shares(share_name=share_name, dltshr_workspace_url=workspace_url)
+    ...
+```
+
+### Valid Workspace URL Patterns
+- **Azure**: `https://adb-*.azuredatabricks.net`
+- **AWS**: `https://*.cloud.databricks.com`
+- **GCP**: `https://*.gcp.databricks.com`
 
 ## Authentication
 

@@ -59,28 +59,46 @@ ROUTER_ROLE = APIRouter(tags=["Roles"])  # Phase 2
 
 ### Route Naming Convention
 
-| HTTP Method | Route Pattern | Function Name |
-|-------------|---------------|---------------|
-| GET | `/shares` | `list_shares_all` |
-| GET | `/shares/{share_name}` | `get_shares_by_name` |
-| POST | `/shares/{share_name}` | `create_share` |
-| PUT | `/shares/{share_name}/...` | `update_share_...` |
-| DELETE | `/shares/{share_name}` | `delete_share_by_name` |
+| HTTP Method | Route Pattern              | Function Name          |
+| ----------- | -------------------------- | ---------------------- |
+| GET         | `/shares`                  | `list_shares_all`      |
+| GET         | `/shares/{share_name}`     | `get_shares_by_name`   |
+| POST        | `/shares/{share_name}`     | `create_share`         |
+| PUT         | `/shares/{share_name}/...` | `update_share_...`     |
+| DELETE      | `/shares/{share_name}`     | `delete_share_by_name` |
 
 ## Dependency Injection
 
+### Workspace URL from Header (Required)
+**IMPORTANT**: The Databricks workspace URL comes from the `X-Workspace-URL` request header, NOT from settings:
+
+```python
+from fastapi import Depends
+from dbrx_api.dependencies import get_workspace_url, verify_subscription_key
+
+@ROUTER_SHARE.get("/shares/{share_name}")
+async def get_shares_by_name(
+    share_name: str,
+    workspace_url: str = Depends(get_workspace_url),  # From X-Workspace-URL header
+    _: str = Depends(verify_subscription_key),        # API key validation
+) -> ShareInfo:
+    """Retrieve share by name."""
+    share = get_shares(share_name=share_name, dltshr_workspace_url=workspace_url)
+    ...
+```
+
 ### Settings Access
-Access settings via request.app.state:
+Access settings via request.app.state (for non-header config values):
 
 ```python
 from fastapi import Request
 from dbrx_api.settings import Settings
 
-@ROUTER_SHARE.get("/shares/{share_name}")
-async def get_shares_by_name(request: Request, share_name: str) -> ShareInfo:
-    """Retrieve share by name."""
+@ROUTER_HEALTH.get("/health")
+async def health_check(request: Request):
+    """Health check - uses settings for logging config, etc."""
     settings: Settings = request.app.state.settings
-    share = get_shares(share_name=share_name, dltshr_workspace_url=settings.dltshr_workspace_url)
+    # Settings used for non-Databricks configuration
     ...
 ```
 
@@ -257,18 +275,18 @@ class GetSharesResponse(BaseModel):
 
 ## Status Code Guidelines
 
-| Scenario | Status Code |
-|----------|-------------|
-| Success with body | 200 OK |
-| Resource created | 201 Created |
-| No content | 204 No Content |
-| Invalid request | 400 Bad Request |
-| Unauthorized | 401 Unauthorized |
-| Permission denied | 403 Forbidden |
-| Not found | 404 Not Found |
-| Conflict (duplicate) | 409 Conflict |
-| Validation error | 422 Unprocessable Entity |
-| Server error | 500 Internal Server Error |
+| Scenario             | Status Code               |
+| -------------------- | ------------------------- |
+| Success with body    | 200 OK                    |
+| Resource created     | 201 Created               |
+| No content           | 204 No Content            |
+| Invalid request      | 400 Bad Request           |
+| Unauthorized         | 401 Unauthorized          |
+| Permission denied    | 403 Forbidden             |
+| Not found            | 404 Not Found             |
+| Conflict (duplicate) | 409 Conflict              |
+| Validation error     | 422 Unprocessable Entity  |
+| Server error         | 500 Internal Server Error |
 
 ## OpenAPI Customization
 
