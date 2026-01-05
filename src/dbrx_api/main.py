@@ -40,7 +40,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # This must happen BEFORE Settings() is initialized so that
     # environment variables are available for pydantic-settings
     if KEYVAULT_AVAILABLE:
-        load_secrets_from_keyvault()
+        logger.info("Key Vault module is available, attempting to load secrets")
+        try:
+            secrets_loaded = load_secrets_from_keyvault()
+            if secrets_loaded:
+                logger.info("Successfully loaded secrets from Azure Key Vault")
+            else:
+                logger.info("Key Vault loading skipped (no AZURE_KEYVAULT_URL set)")
+        except Exception as e:
+            logger.error(f"Failed to load secrets from Key Vault: {e}")
+            raise
+    else:
+        logger.warning("Key Vault module not available - using environment variables directly")
 
     settings = settings or Settings()
 
