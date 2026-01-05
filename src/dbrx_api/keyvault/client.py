@@ -57,16 +57,31 @@ def load_secrets_from_keyvault(vault_url: Optional[str] = None) -> bool:
 
     try:
         # Import Azure SDK only when needed (not installed in local dev)
-        from azure.identity import DefaultAzureCredential
+        import logging
+
+        from azure.identity import (
+            DefaultAzureCredential,
+            ManagedIdentityCredential,
+        )
         from azure.keyvault.secrets import SecretClient
+
+        # Suppress verbose Azure SDK logging in production
+        logging.getLogger("azure.identity").setLevel(logging.ERROR)
+        logging.getLogger("azure.core.pipeline.policies").setLevel(logging.ERROR)
 
         logger.info(f"Loading secrets from Azure Key Vault: {kv_url}")
 
-        # Use DefaultAzureCredential which supports:
-        # - Managed Identity (Azure Web App)
-        # - Azure CLI credentials (local dev with 'az login')
-        # - Environment variables (AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID)
-        credential = DefaultAzureCredential()
+        # Use ManagedIdentityCredential in Azure Web App (faster, no credential chain noise)
+        # Fall back to DefaultAzureCredential for local development
+        if os.getenv("WEBSITE_INSTANCE_ID"):
+            # Running in Azure App Service - use Managed Identity directly
+            credential = ManagedIdentityCredential()
+            logger.debug("Using ManagedIdentityCredential for Azure App Service")
+        else:
+            # Local development - use DefaultAzureCredential (supports az login, etc.)
+            credential = DefaultAzureCredential(exclude_visual_studio_code_credential=True)
+            logger.debug("Using DefaultAzureCredential for local development")
+
         client = SecretClient(vault_url=kv_url, credential=credential)
 
         secrets_loaded = 0
@@ -144,10 +159,24 @@ def get_secret_from_keyvault(
     if not kv_url:
         return None
 
-    from azure.identity import DefaultAzureCredential
+    import logging
+
+    from azure.identity import (
+        DefaultAzureCredential,
+        ManagedIdentityCredential,
+    )
     from azure.keyvault.secrets import SecretClient
 
-    credential = DefaultAzureCredential()
+    # Suppress verbose Azure SDK logging
+    logging.getLogger("azure.identity").setLevel(logging.ERROR)
+    logging.getLogger("azure.core.pipeline.policies").setLevel(logging.ERROR)
+
+    # Use ManagedIdentityCredential in Azure, DefaultAzureCredential locally
+    if os.getenv("WEBSITE_INSTANCE_ID"):
+        credential = ManagedIdentityCredential()
+    else:
+        credential = DefaultAzureCredential(exclude_visual_studio_code_credential=True)
+
     client = SecretClient(vault_url=kv_url, credential=credential)
 
     secret = client.get_secret(secret_name)

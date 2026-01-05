@@ -15,7 +15,7 @@ import requests
 from dotenv import load_dotenv
 
 # Conditionally load from .env file if it exists (local development)
-# In production (Azure Web App), environment variables are already set
+# In production (Azure Web App), environment variables are loaded from Key Vault at startup
 env_file = Path(__file__).parent.parent.parent.parent / ".env"
 if env_file.exists():
     load_dotenv(env_file)
@@ -23,9 +23,9 @@ if env_file.exists():
 else:
     print("⚠ No .env file found - using web app environment variables")
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-ACCOUNT_ID = os.getenv("ACCOUNT_ID")
+# NOTE: Don't load credentials at import time - they may not be available yet
+# (Key Vault secrets are loaded in create_app() before Settings initialization)
+# Instead, read from os.getenv() when needed in get_auth_token()
 
 
 class CustomError(Exception):
@@ -138,17 +138,25 @@ def get_auth_token(exec_time_utc: datetime) -> Tuple[str, datetime]:
                 print("\n⚠ Cached token expires soon, generating new token...")
             except (ValueError, TypeError) as e:
                 print(f"\n⚠ Error parsing cached token, generating new: {e}")
-        # Validate required environment variables
-        if not all([CLIENT_ID, CLIENT_SECRET, ACCOUNT_ID]):
-            raise CustomError("Missing required environment variables: CLIENT_ID, " "CLIENT_SECRET, or ACCOUNT_ID")
+        # Read credentials from environment (loaded from Key Vault at startup or .env file)
+        client_id = os.getenv("CLIENT_ID")
+        client_secret = os.getenv("CLIENT_SECRET")
+        account_id = os.getenv("ACCOUNT_ID")
 
-        url = f"https://accounts.azuredatabricks.net/oidc/accounts/" f"{ACCOUNT_ID}/v1/token"
+        # Validate required environment variables
+        if not all([client_id, client_secret, account_id]):
+            raise CustomError(
+                "Missing required environment variables: CLIENT_ID, CLIENT_SECRET, or ACCOUNT_ID. "
+                "Ensure these are set in Azure Key Vault or .env file."
+            )
+
+        url = f"https://accounts.azuredatabricks.net/oidc/accounts/{account_id}/v1/token"
 
         # Prepare request payload
         payload = {"grant_type": "client_credentials", "scope": "all-apis"}
 
         # Encode credentials for Basic authentication
-        credentials = f"{CLIENT_ID}:{CLIENT_SECRET}"
+        credentials = f"{client_id}:{client_secret}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
 
         headers = {"Authorization": f"Basic {encoded_credentials}"}

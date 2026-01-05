@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import sys
 import traceback
 from typing import Optional
@@ -50,6 +51,12 @@ def configure_logger(
         postgresql_min_level: Minimum log level for PostgreSQL
     """
     global _azure_blob_handler, _postgresql_handler
+
+    # Suppress verbose Azure SDK logging
+    logging.getLogger("azure").setLevel(logging.WARNING)
+    logging.getLogger("azure.identity").setLevel(logging.ERROR)
+    logging.getLogger("azure.core").setLevel(logging.ERROR)
+    logging.getLogger("azure.core.pipeline.policies").setLevel(logging.ERROR)
 
     logger.remove()  # remove the default logger
 
