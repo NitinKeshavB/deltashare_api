@@ -51,7 +51,8 @@ def load_secrets_from_keyvault(vault_url: Optional[str] = None) -> bool:
     kv_url = vault_url or os.getenv("AZURE_KEYVAULT_URL")
 
     if not kv_url:
-        logger.info("AZURE_KEYVAULT_URL not set, using .env file for configuration")
+        # Quietly skip Key Vault in local development
+        logger.debug("AZURE_KEYVAULT_URL not set, using local environment configuration")
         return False
 
     try:

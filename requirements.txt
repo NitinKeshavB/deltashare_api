@@ -1,3 +1,4 @@
+-e .[dbrx,api,azure]
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.0
@@ -6,6 +7,7 @@ asttokens==3.0.1
 asyncpg==0.31.0
 azure-core==1.37.0
 azure-identity==1.25.1
+azure-keyvault-secrets==4.10.0
 azure-storage-blob==12.27.1
 black==25.11.0
 build==1.3.0

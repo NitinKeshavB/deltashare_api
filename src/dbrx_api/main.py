@@ -12,8 +12,21 @@ from dbrx_api.errors import (
     handle_databricks_errors,
     handle_pydantic_validation_errors,
 )
-from dbrx_api.keyvault import load_secrets_from_keyvault
 from dbrx_api.monitoring.logger import configure_logger
+
+# Import Key Vault loader (may not be available if azure extras not installed)
+try:
+    from dbrx_api.keyvault import load_secrets_from_keyvault
+
+    KEYVAULT_AVAILABLE = True
+except ImportError:
+    KEYVAULT_AVAILABLE = False
+
+    def load_secrets_from_keyvault() -> bool:
+        """Fallback if Key Vault module not installed."""
+        return False
+
+
 from dbrx_api.monitoring.request_context import RequestContextMiddleware
 from dbrx_api.routes_health import ROUTER_HEALTH
 from dbrx_api.routes_recipient import ROUTER_RECIPIENT
@@ -26,7 +39,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Load secrets from Azure Key Vault if AZURE_KEYVAULT_URL is set
     # This must happen BEFORE Settings() is initialized so that
     # environment variables are available for pydantic-settings
-    load_secrets_from_keyvault()
+    if KEYVAULT_AVAILABLE:
+        load_secrets_from_keyvault()
 
     settings = settings or Settings()
 
