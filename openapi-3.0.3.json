@@ -1,0 +1,2169 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Delta Share API",
+    "description": "\n![Maintained by](https://img.shields.io/badge/Maintained_by-EDP%20Delta%20share_Team-green?style=for-the-badge)\n\n\n| Helpful Links | Notes |\n| --- | --- |\n| [Delta Share Confluence ](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20491567149/Enterprise+Delta+Share+Application) |`update-in-progress` |\n| [Delta Share Dev Team](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587905070/Delta+Share+team) |`update-in-progress` |\n| [Delta Share CDR Sign off](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/jlltknowledgebase/pages/20324713069/External+Delta+Sharing+Framework+-+Architectural+Design+High+Level) | `signed-off` |\n| [Delta Share Project Repo](https://github.com/JLLT-Apps/JLLT-EDP-DeltaShare) | `Databricks-API-Web repo` |\n| [Delta Share status codes](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/edit-v2/20587249733?draftShareId=a715edeb-f8fc-4c02-90c4-a40ffdff3ecd) | `update-in-progress` |\n| [API Status](https://jlldigitalproductengineering.atlassian.net/wiki/spaces/DP/pages/20587970637/API+Dev+Status) | <img alt=\"Static Badge\" src=\"https://img.shields.io/badge/Recipient_Done-Green?style=for-the-badge&logoColor=green\"> <img alt=\"Static Badge\" src=\"https://img.shields.io/badge/share_Done-blue?style=for-the-badge&color=blue\"> |\n",
+    "version": "v1"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check endpoint",
+        "description": "Basic health check that returns application status and metadata",
+        "operationId": "Health-health_check",
+        "responses": {
+          "200": {
+            "description": "Application is healthy",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "status": "healthy",
+                  "timestamp": "2026-01-05T12:00:00.000000Z",
+                  "service": "Delta Share API",
+                  "version": "v1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness check endpoint",
+        "description": "Readiness check that verifies the application can access critical dependencies",
+        "operationId": "Health-readiness_check",
+        "responses": {
+          "200": {
+            "description": "Application is ready to serve requests",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "status": "ready",
+                  "timestamp": "2026-01-05T12:00:00.000000Z",
+                  "service": "Delta Share API",
+                  "checks": {
+                    "settings": "ok",
+                    "authentication": "ok"
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Application is not ready to serve requests",
+            "content": {
+              "application/json": {
+                "example": {
+                  "status": "not_ready",
+                  "timestamp": "2026-01-05T12:00:00.000000Z",
+                  "service": "Delta Share API",
+                  "checks": {
+                    "settings": "ok",
+                    "authentication": "failed"
+                  },
+                  "error": "Authentication configuration missing"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Liveness check endpoint",
+        "description": "Simple liveness check to verify the application is running",
+        "operationId": "Health-liveness_check",
+        "responses": {
+          "200": {
+            "description": "Application is alive",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "status": "alive",
+                  "timestamp": "2026-01-05T12:00:00.000000Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares/{share_name}": {
+      "get": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Get Shares By Name",
+        "description": "Retrieve detailed information for a specific Delta Sharing share by name.",
+        "operationId": "Shares-get_shares_by_name",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Share not found"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Delete Share By Name",
+        "description": "Permanently delete a Delta Sharing share and all its associated permissions.",
+        "operationId": "Shares-delete_share_by_name",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted Share successfully!",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "detail": "Deleted Share successfully!"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Share not found"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied to delete share as user is not the owner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Permission denied to delete share as user is not the owner"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Create Share",
+        "description": "Create a new Delta Sharing share for Databricks-to-Databricks data sharing.",
+        "operationId": "Shares-create_share",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Description"
+            }
+          },
+          {
+            "name": "storage_root",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Storage Root",
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareInfo"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Shares created successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Share created successfully!"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Share already exists",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Share already exists"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares": {
+      "get": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "List Shares All Or With Prefix",
+        "description": "List all Delta Sharing shares with optional prefix filtering and pagination.",
+        "operationId": "Shares-list_shares_all_or_with_prefix",
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Prefix",
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Page Size",
+              "type": "integer",
+              "nullable": true
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shares fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "Message": "Fetched 5 shares!",
+                  "Share": []
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No shares found for search criteria",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "No shares found for search criteria."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares/{share_name}/dataobject/add": {
+      "put": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Add Data Objects To Share",
+        "description": "Add data objects (tables, views, schemas) to an existing Delta Sharing share.",
+        "operationId": "Shares-add_data_objects_to_share",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDataObjectsRequest"
+              },
+              "example": {
+                "tables": [
+                  "catalog.schema.table1",
+                  "catalog.schema.table2"
+                ],
+                "views": [
+                  "catalog.schema.view1"
+                ],
+                "schemas": [
+                  "catalog.schema"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Share not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Data object already exists in share",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Data object already exists in share"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares/{share_name}/dataobject/revoke": {
+      "put": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Revoke Data Objects From Share",
+        "description": "Remove data objects (tables, views, schemas) from a Delta Sharing share.",
+        "operationId": "Shares-revoke_data_objects_from_share",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDataObjectsRequest"
+              },
+              "example": {
+                "tables": [
+                  "catalog.schema.table1",
+                  "catalog.schema.table2"
+                ],
+                "views": [
+                  "catalog.schema.view1"
+                ],
+                "schemas": [
+                  "catalog.schema"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Share not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to revoke data objects",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Failed to revoke data objects"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares/{share_name}/recipients/add": {
+      "put": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Add Recipient To Share",
+        "description": "Grant SELECT permission to a recipient for a Delta Sharing share.",
+        "operationId": "Shares-add_recipient_to_share",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "recipient_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recipient added successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSharePermissionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share or recipient not found"
+          },
+          "409": {
+            "description": "Recipient already has access to share"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares/{share_name}/recipients/remove": {
+      "put": {
+        "tags": [
+          "Shares"
+        ],
+        "summary": "Remove Recipients From Share",
+        "description": "Revoke SELECT permission from a recipient for a Delta Sharing share.",
+        "operationId": "Shares-remove_recipients_from_share",
+        "parameters": [
+          {
+            "name": "share_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Name"
+            }
+          },
+          {
+            "name": "recipient_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recipient removed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSharePermissionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share or recipient not found"
+          },
+          "409": {
+            "description": "Recipient already has access to share"
+          },
+          "403": {
+            "description": "Permission denied"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/{recipient_name}": {
+      "get": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Get Recipients",
+        "description": "Get a specific recipient by name.",
+        "operationId": "Recipients-get_recipients",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Recipient not found"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Delete Recipient By Name",
+        "description": "Delete a Recipient.",
+        "operationId": "Recipients-delete_recipient_by_name",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted Recipient successfully!",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "detail": "Deleted Recipient successfully!"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Recipient not found"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied to delete recipient",
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "Permission denied to delete recipient as user is not the owner"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients": {
+      "get": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "List Recipients All",
+        "description": "List all recipients or with optional prefix filtering.",
+        "operationId": "Recipients-list_recipients_all",
+        "parameters": [
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Prefix",
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Page Size",
+              "type": "integer",
+              "nullable": true
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recipients fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "Message": "Fetched 5 recipients!",
+                  "Recipient": []
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/d2d/{recipient_name}": {
+      "post": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Create Recipient Databricks To Databricks",
+        "description": "Create a recipient for Databricks to Databricks sharing.",
+        "operationId": "Recipients-create_recipient_databricks_to_databricks",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "recipient_identifier",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Identifier"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Description"
+            }
+          },
+          {
+            "name": "sharing_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Sharing Code",
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recipients created successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient created successfully!"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Recipient already exists",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient already exists"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/d2o/{recipient_name}": {
+      "post": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Create Recipient Databricks To Opensharing",
+        "description": "Create a recipient for Databricks to Databricks sharing.",
+        "operationId": "Recipients-create_recipient_databricks_to_opensharing",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Description"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Ip Access List",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "nullable": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recipients created successfully",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient created successfully!"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Recipient already exists",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient already exists"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid IP addresses or CIDR blocks",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Invalid IP addresses or CIDR blocks"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/{recipient_name}/tokens/rotate": {
+      "put": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Rotate Recipient Tokens",
+        "description": "Rotate a recipient token for Databricks to opensharing protocol.",
+        "operationId": "Recipients-rotate_recipient_tokens",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "expire_in_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Expire In Seconds"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "expire_in_seconds must be a non-negative integer",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Iexpire_in_seconds must be a non-negative integer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/{recipient_name}/ipaddress/add": {
+      "put": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Add Client Ip To Databricks Opensharing",
+        "description": "Add IP to access list for Databricks to opensharing protocol.",
+        "operationId": "Recipients-add_client_ip_to_databricks_opensharing",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "title": "Ip Access List"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "IP access list cannot be empty",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "IP access list cannot be empty"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/{recipient_name}/ipaddress/revoke": {
+      "put": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Revoke Client Ip From Databricks Opensharing",
+        "description": "revoke IP to access list for Databricks to opensharing protocol.",
+        "operationId": "Recipients-revoke_client_ip_from_databricks_opensharing",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "title": "Ip Access List"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "IP access list cannot be empty",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "IP access list cannot be empty"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/{recipient_name}/description/update": {
+      "put": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Update Recipients Description",
+        "description": "Rotate a recipient token for Databricks to opensharing protocol.",
+        "operationId": "Recipients-update_recipients_description",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Description"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Description cannot be empty",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Description cannot be empty"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied to update description of recipient as user is not the owner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Permission denied to update description of recipient as user is not the owner"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recipients/{recipient_name}/expiration_time/update": {
+      "put": {
+        "tags": [
+          "Recipients"
+        ],
+        "summary": "Update Recipients Expiration Time",
+        "description": "Rotate a recipient token for Databricks to opensharing protocol.",
+        "operationId": "Recipients-update_recipients_expiration_time",
+        "parameters": [
+          {
+            "name": "recipient_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Recipient Name"
+            }
+          },
+          {
+            "name": "expiration_time_in_days",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Expiration Time In Days"
+            }
+          },
+          {
+            "name": "X-Workspace-URL",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "<small>*HTTPS URL of Databricks workspace*</small>",
+              "title": "X-Workspace-Url"
+            },
+            "description": "<small>*HTTPS URL of Databricks workspace*</small>"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recipient not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Recipient not found"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Expiration time in days cannot be negative or empty or zero",
+            "content": {
+              "application/json": {
+                "example": {
+                  "Message": "Expiration time in days cannot be negative or empty or zero"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddDataObjectsRequest": {
+        "properties": {
+          "tables": {
+            "title": "Tables",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "nullable": true
+          },
+          "views": {
+            "title": "Views",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "nullable": true
+          },
+          "schemas": {
+            "title": "Schemas",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "AddDataObjectsRequest",
+        "description": "Request model for adding data objects to a share.",
+        "example": {
+          "schemas": [
+            "catalog.schema"
+          ],
+          "tables": [
+            "catalog.schema.table1",
+            "catalog.schema.table2"
+          ],
+          "views": [
+            "catalog.schema.view1"
+          ]
+        }
+      },
+      "AuthenticationType": {
+        "type": "string",
+        "enum": [
+          "DATABRICKS",
+          "OAUTH_CLIENT_CREDENTIALS",
+          "OIDC_FEDERATION",
+          "TOKEN"
+        ],
+        "title": "AuthenticationType",
+        "description": "The delta sharing authentication type."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IpAccessList": {
+        "properties": {
+          "allowed_ip_addresses": {
+            "title": "Allowed Ip Addresses",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "IpAccessList"
+      },
+      "Partition": {
+        "properties": {
+          "values": {
+            "title": "Values",
+            "items": {
+              "$ref": "#/components/schemas/PartitionValue"
+            },
+            "type": "array",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "Partition"
+      },
+      "PartitionValue": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string",
+            "nullable": true
+          },
+          "op": {
+            "$ref": "#/components/schemas/PartitionValueOp",
+            "nullable": true
+          },
+          "recipient_property_key": {
+            "title": "Recipient Property Key",
+            "type": "string",
+            "nullable": true
+          },
+          "value": {
+            "title": "Value",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "PartitionValue"
+      },
+      "PartitionValueOp": {
+        "type": "string",
+        "enum": [
+          "EQUAL",
+          "LIKE"
+        ],
+        "title": "PartitionValueOp"
+      },
+      "Privilege": {
+        "type": "string",
+        "enum": [
+          "ACCESS",
+          "ALL_PRIVILEGES",
+          "APPLY_TAG",
+          "CREATE",
+          "CREATE_CATALOG",
+          "CREATE_CONNECTION",
+          "CREATE_EXTERNAL_LOCATION",
+          "CREATE_EXTERNAL_TABLE",
+          "CREATE_EXTERNAL_VOLUME",
+          "CREATE_FOREIGN_CATALOG",
+          "CREATE_FOREIGN_SECURABLE",
+          "CREATE_FUNCTION",
+          "CREATE_MANAGED_STORAGE",
+          "CREATE_MATERIALIZED_VIEW",
+          "CREATE_MODEL",
+          "CREATE_PROVIDER",
+          "CREATE_RECIPIENT",
+          "CREATE_SCHEMA",
+          "CREATE_SERVICE_CREDENTIAL",
+          "CREATE_SHARE",
+          "CREATE_STORAGE_CREDENTIAL",
+          "CREATE_TABLE",
+          "CREATE_VIEW",
+          "CREATE_VOLUME",
+          "EXECUTE",
+          "MANAGE",
+          "MANAGE_ALLOWLIST",
+          "MODIFY",
+          "READ_FILES",
+          "READ_PRIVATE_FILES",
+          "READ_VOLUME",
+          "REFRESH",
+          "SELECT",
+          "SET_SHARE_PERMISSION",
+          "USAGE",
+          "USE_CATALOG",
+          "USE_CONNECTION",
+          "USE_MARKETPLACE_ASSETS",
+          "USE_PROVIDER",
+          "USE_RECIPIENT",
+          "USE_SCHEMA",
+          "USE_SHARE",
+          "WRITE_FILES",
+          "WRITE_PRIVATE_FILES",
+          "WRITE_VOLUME"
+        ],
+        "title": "Privilege"
+      },
+      "PrivilegeAssignment": {
+        "properties": {
+          "principal": {
+            "title": "Principal",
+            "type": "string",
+            "nullable": true
+          },
+          "privileges": {
+            "title": "Privileges",
+            "items": {
+              "$ref": "#/components/schemas/Privilege"
+            },
+            "type": "array",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "PrivilegeAssignment"
+      },
+      "RecipientInfo": {
+        "properties": {
+          "activated": {
+            "title": "Activated",
+            "type": "boolean",
+            "nullable": true
+          },
+          "activation_url": {
+            "title": "Activation Url",
+            "type": "string",
+            "nullable": true
+          },
+          "authentication_type": {
+            "$ref": "#/components/schemas/AuthenticationType",
+            "nullable": true
+          },
+          "cloud": {
+            "title": "Cloud",
+            "type": "string",
+            "nullable": true
+          },
+          "comment": {
+            "title": "Comment",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "integer",
+            "nullable": true
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string",
+            "nullable": true
+          },
+          "data_recipient_global_metastore_id": {
+            "title": "Data Recipient Global Metastore Id",
+            "type": "string",
+            "nullable": true
+          },
+          "expiration_time": {
+            "title": "Expiration Time",
+            "type": "integer",
+            "nullable": true
+          },
+          "ip_access_list": {
+            "$ref": "#/components/schemas/IpAccessList",
+            "nullable": true
+          },
+          "metastore_id": {
+            "title": "Metastore Id",
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "title": "Name",
+            "type": "string",
+            "nullable": true
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string",
+            "nullable": true
+          },
+          "properties_kvpairs": {
+            "$ref": "#/components/schemas/SecurablePropertiesKvPairs",
+            "nullable": true
+          },
+          "region": {
+            "title": "Region",
+            "type": "string",
+            "nullable": true
+          },
+          "sharing_code": {
+            "title": "Sharing Code",
+            "type": "string",
+            "nullable": true
+          },
+          "tokens": {
+            "title": "Tokens",
+            "items": {
+              "$ref": "#/components/schemas/RecipientTokenInfo"
+            },
+            "type": "array",
+            "nullable": true
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "integer",
+            "nullable": true
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "RecipientInfo"
+      },
+      "RecipientTokenInfo": {
+        "properties": {
+          "activation_url": {
+            "title": "Activation Url",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "integer",
+            "nullable": true
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string",
+            "nullable": true
+          },
+          "expiration_time": {
+            "title": "Expiration Time",
+            "type": "integer",
+            "nullable": true
+          },
+          "id": {
+            "title": "Id",
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "integer",
+            "nullable": true
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "RecipientTokenInfo"
+      },
+      "SecurablePropertiesKvPairs": {
+        "properties": {
+          "properties": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Properties"
+          }
+        },
+        "type": "object",
+        "required": [
+          "properties"
+        ],
+        "title": "SecurablePropertiesKvPairs"
+      },
+      "ShareInfo": {
+        "properties": {
+          "comment": {
+            "title": "Comment",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "integer",
+            "nullable": true
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "title": "Name",
+            "type": "string",
+            "nullable": true
+          },
+          "objects": {
+            "title": "Objects",
+            "items": {
+              "$ref": "#/components/schemas/SharedDataObject"
+            },
+            "type": "array",
+            "nullable": true
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string",
+            "nullable": true
+          },
+          "storage_location": {
+            "title": "Storage Location",
+            "type": "string",
+            "nullable": true
+          },
+          "storage_root": {
+            "title": "Storage Root",
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "integer",
+            "nullable": true
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "ShareInfo"
+      },
+      "SharedDataObject": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "added_at": {
+            "title": "Added At",
+            "type": "integer",
+            "nullable": true
+          },
+          "added_by": {
+            "title": "Added By",
+            "type": "string",
+            "nullable": true
+          },
+          "cdf_enabled": {
+            "title": "Cdf Enabled",
+            "type": "boolean",
+            "nullable": true
+          },
+          "comment": {
+            "title": "Comment",
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "title": "Content",
+            "type": "string",
+            "nullable": true
+          },
+          "data_object_type": {
+            "$ref": "#/components/schemas/SharedDataObjectDataObjectType",
+            "nullable": true
+          },
+          "history_data_sharing_status": {
+            "$ref": "#/components/schemas/SharedDataObjectHistoryDataSharingStatus",
+            "nullable": true
+          },
+          "partitions": {
+            "title": "Partitions",
+            "items": {
+              "$ref": "#/components/schemas/Partition"
+            },
+            "type": "array",
+            "nullable": true
+          },
+          "shared_as": {
+            "title": "Shared As",
+            "type": "string",
+            "nullable": true
+          },
+          "start_version": {
+            "title": "Start Version",
+            "type": "integer",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/SharedDataObjectStatus",
+            "nullable": true
+          },
+          "string_shared_as": {
+            "title": "String Shared As",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SharedDataObject"
+      },
+      "SharedDataObjectDataObjectType": {
+        "type": "string",
+        "enum": [
+          "FEATURE_SPEC",
+          "FUNCTION",
+          "MATERIALIZED_VIEW",
+          "MODEL",
+          "NOTEBOOK_FILE",
+          "SCHEMA",
+          "STREAMING_TABLE",
+          "TABLE",
+          "VIEW"
+        ],
+        "title": "SharedDataObjectDataObjectType"
+      },
+      "SharedDataObjectHistoryDataSharingStatus": {
+        "type": "string",
+        "enum": [
+          "DISABLED",
+          "ENABLED"
+        ],
+        "title": "SharedDataObjectHistoryDataSharingStatus"
+      },
+      "SharedDataObjectStatus": {
+        "type": "string",
+        "enum": [
+          "ACTIVE",
+          "PERMISSION_DENIED"
+        ],
+        "title": "SharedDataObjectStatus"
+      },
+      "UpdateSharePermissionsResponse": {
+        "properties": {
+          "privilege_assignments": {
+            "title": "Privilege Assignments",
+            "items": {
+              "$ref": "#/components/schemas/PrivilegeAssignment"
+            },
+            "type": "array",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "UpdateSharePermissionsResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

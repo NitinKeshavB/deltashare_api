@@ -1,7 +1,9 @@
 from textwrap import dedent
+from typing import Any
 
 import pydantic
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
 from loguru import logger
@@ -77,7 +79,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Delta Share API",
-        summary="API for managing Delta Share recipients and shares.",
         version="v1",
         description=dedent(
             """
@@ -143,9 +144,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     .topbar label {{
                         display: none !important;
                     }}
+
+                    /* Download button styling */
+                    .download-openapi-btn {{
+                        position: fixed;
+                        top: 10px;
+                        right: 20px;
+                        z-index: 10000;
+                        background-color: #4990e2;
+                        color: white;
+                        padding: 10px 20px;
+                        border-radius: 4px;
+                        text-decoration: none;
+                        font-weight: 500;
+                        font-size: 14px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                        transition: background-color 0.2s;
+                    }}
+
+                    .download-openapi-btn:hover {{
+                        background-color: #357abd;
+                    }}
                 </style>
             </head>
             <body>
+                <a href="{app.openapi_url}" download="openapi.json" class="download-openapi-btn">Download OpenAPI JSON</a>
                 <div id="swagger-ui"></div>
                 <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
                 <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
@@ -201,6 +224,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.middleware("http")(handle_broad_exceptions)
 
+    # Override OpenAPI schema generation to produce 3.0.3 compatible spec
+    app.openapi = lambda: custom_openapi_schema(app)
+
     return app
 
 
@@ -213,6 +239,131 @@ def custom_generate_unique_id(route: APIRoute):
     if route.tags:
         return f"{route.tags[0]}-{route.name}"
     return route.name
+
+
+def custom_openapi_schema(app: FastAPI) -> dict[str, Any]:
+    """
+    Generate OpenAPI 3.0.3 compatible schema for Azure API Management.
+
+    Azure API Management only supports OpenAPI 3.0.x, not 3.1.0.
+    This function converts FastAPI's default 3.1.0 schema to 3.0.3.
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    # Convert from OpenAPI 3.1.0 to 3.0.3 for Azure API Management compatibility
+    openapi_schema["openapi"] = "3.0.3"
+
+    # Remove 3.1.0-only fields from info object
+    if "summary" in openapi_schema.get("info", {}):
+        del openapi_schema["info"]["summary"]
+
+    # Convert nullable fields from 3.1.0 format to 3.0.x format
+    # In 3.1.0: "type": ["string", "null"]
+    # In 3.0.x: "type": "string", "nullable": true
+    def convert_schema_to_3_0(schema: dict[str, Any]) -> None:
+        """Recursively convert schema from 3.1.0 to 3.0.3 format."""
+        if not isinstance(schema, dict):
+            return
+
+        # Convert anyOf with null to nullable (common in Pydantic v2 output)
+        # Example: anyOf: [{type: "string"}, {type: "null"}] -> type: "string", nullable: true
+        if "anyOf" in schema and isinstance(schema["anyOf"], list):
+            null_schema = None
+            non_null_schemas = []
+
+            for sub_schema in schema["anyOf"]:
+                if isinstance(sub_schema, dict) and sub_schema.get("type") == "null":
+                    null_schema = sub_schema
+                else:
+                    non_null_schemas.append(sub_schema)
+
+            # If we have exactly one non-null schema and a null schema, simplify it
+            if null_schema and len(non_null_schemas) == 1:
+                non_null = non_null_schemas[0]
+                # Merge the non-null schema into the parent
+                for key, value in non_null.items():
+                    schema[key] = value
+                schema["nullable"] = True
+                del schema["anyOf"]
+            elif not null_schema:
+                # No null type, recursively process
+                for sub_schema in schema["anyOf"]:
+                    convert_schema_to_3_0(sub_schema)
+
+        # Convert type array with null to nullable
+        if "type" in schema and isinstance(schema["type"], list):
+            if "null" in schema["type"]:
+                non_null_types = [t for t in schema["type"] if t != "null"]
+                if len(non_null_types) == 1:
+                    schema["type"] = non_null_types[0]
+                    schema["nullable"] = True
+                elif len(non_null_types) > 1:
+                    # Multiple non-null types - use anyOf
+                    schema["anyOf"] = [{"type": t} for t in non_null_types]
+                    schema["nullable"] = True
+                    del schema["type"]
+
+        # Remove 3.1.0 specific keywords
+        if "examples" in schema:
+            # In 3.0.x, use example (singular) instead of examples (plural)
+            if isinstance(schema["examples"], list) and len(schema["examples"]) > 0:
+                schema["example"] = schema["examples"][0]
+            del schema["examples"]
+
+        # Recursively process nested schemas
+        for key in ["properties", "items", "additionalProperties", "oneOf", "allOf"]:
+            if key in schema:
+                if key == "properties" and isinstance(schema[key], dict):
+                    for prop_schema in schema[key].values():
+                        convert_schema_to_3_0(prop_schema)
+                elif key in ["oneOf", "allOf"] and isinstance(schema[key], list):
+                    for sub_schema in schema[key]:
+                        convert_schema_to_3_0(sub_schema)
+                elif key in ["items", "additionalProperties"]:
+                    convert_schema_to_3_0(schema[key])
+
+    # Convert all schemas in components
+    if "components" in openapi_schema and "schemas" in openapi_schema["components"]:
+        for schema in openapi_schema["components"]["schemas"].values():
+            convert_schema_to_3_0(schema)
+
+    # Convert schemas in paths
+    if "paths" in openapi_schema:
+        for path_item in openapi_schema["paths"].values():
+            if isinstance(path_item, dict):
+                for operation in path_item.values():
+                    if isinstance(operation, dict):
+                        # Convert request body schemas
+                        if "requestBody" in operation:
+                            content = operation["requestBody"].get("content", {})
+                            for media_type in content.values():
+                                if "schema" in media_type:
+                                    convert_schema_to_3_0(media_type["schema"])
+
+                        # Convert response schemas
+                        if "responses" in operation:
+                            for response in operation["responses"].values():
+                                if isinstance(response, dict) and "content" in response:
+                                    for media_type in response["content"].values():
+                                        if "schema" in media_type:
+                                            convert_schema_to_3_0(media_type["schema"])
+
+                        # Convert parameter schemas
+                        if "parameters" in operation:
+                            for param in operation["parameters"]:
+                                if "schema" in param:
+                                    convert_schema_to_3_0(param["schema"])
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
 
 
 if __name__ == "__main__":
