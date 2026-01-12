@@ -491,7 +491,7 @@ def delete_recipient(
 
     except Exception as ex:
         error_msg = str(ex)
-        if "User is not an owner of Recipient" in error_msg:
+        if "User is not an owner of Recipient" in error_msg or "Unauthorized" in error_msg:
             print(f"✗ Permission denied to delete recipient: {recipient_name}")
             return "User is not an owner of Recipient"
         else:

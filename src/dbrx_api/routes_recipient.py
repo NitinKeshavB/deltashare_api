@@ -12,6 +12,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
@@ -294,7 +295,7 @@ async def create_recipient_databricks_to_opensharing(
     response: Response,
     recipient_name: str,
     description: str,
-    ip_access_list: Optional[List[str]] = None,
+    ip_access_list: Optional[List[str]] = Query(None),
     workspace_url: str = Depends(get_workspace_url),
 ) -> RecipientInfo:
     """Create a recipient for Databricks to Databricks sharing."""
@@ -453,8 +454,8 @@ async def rotate_recipient_tokens(
 async def add_client_ip_to_databricks_opensharing(
     request: Request,
     recipient_name: str,
-    ip_access_list: List[str],
-    response: Response,
+    ip_access_list: List[str] = Query(...),
+    response: Response = None,
     workspace_url: str = Depends(get_workspace_url),
 ):
     """Add IP to access list for Databricks to opensharing protocol."""
@@ -542,8 +543,8 @@ async def add_client_ip_to_databricks_opensharing(
 async def revoke_client_ip_from_databricks_opensharing(
     request: Request,
     recipient_name: str,
-    ip_access_list: List[str],
-    response: Response,
+    ip_access_list: List[str] = Query(...),
+    response: Response = None,
     workspace_url: str = Depends(get_workspace_url),
 ) -> RecipientInfo:
     """revoke IP to access list for Databricks to opensharing protocol."""
@@ -701,7 +702,7 @@ async def update_recipients_description(
         dltshr_workspace_url=workspace_url,
     )
 
-    if isinstance(recipient, str) and "Permission denied" in recipient:
+    if isinstance(recipient, str) and ("Permission denied" in recipient or "not an owner" in recipient):
         logger.warning("Permission denied to update description", recipient_name=recipient_name, error=recipient)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -785,7 +786,7 @@ async def update_recipients_expiration_time(
             dltshr_workspace_url=workspace_url,
         )
 
-        if isinstance(recipient, str) and "Permission denied" in recipient:
+        if isinstance(recipient, str) and ("Permission denied" in recipient or "not an owner" in recipient):
             logger.warning(
                 "Permission denied to update expiration time", recipient_name=recipient_name, error=recipient
             )

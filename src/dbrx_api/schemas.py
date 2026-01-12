@@ -14,6 +14,7 @@ from databricks.sdk.service.sharing import (
 )
 from pydantic import (
     BaseModel,
+    ConfigDict,
     field_validator,
 )
 
@@ -80,16 +81,15 @@ class AddDataObjectsRequest(BaseModel):
     views: Optional[List[str]] = []
     schemas: Optional[List[str]] = []
 
-    class Config:
-        """Pydantic configuration for AddDataObjectsRequest."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "tables": ["catalog.schema.table1", "catalog.schema.table2"],
                 "views": ["catalog.schema.view1"],
                 "schemas": ["catalog.schema"],
             }
         }
+    )
 
 
 # delete (cruD)

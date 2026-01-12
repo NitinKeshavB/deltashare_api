@@ -16,20 +16,6 @@ from dbrx_api.errors import (
     handle_pydantic_validation_errors,
 )
 from dbrx_api.monitoring.logger import configure_logger
-
-# Import Key Vault loader (may not be available if azure extras not installed)
-try:
-    from dbrx_api.keyvault import load_secrets_from_keyvault
-
-    KEYVAULT_AVAILABLE = True
-except ImportError:
-    KEYVAULT_AVAILABLE = False
-
-    def load_secrets_from_keyvault() -> bool:
-        """Fallback if Key Vault module not installed."""
-        return False
-
-
 from dbrx_api.monitoring.request_context import RequestContextMiddleware
 from dbrx_api.routes_health import ROUTER_HEALTH
 from dbrx_api.routes_recipient import ROUTER_RECIPIENT
@@ -39,23 +25,8 @@ from dbrx_api.settings import Settings
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create a FastAPI application."""
-    # Load secrets from Azure Key Vault if AZURE_KEYVAULT_URL is set
-    # This must happen BEFORE Settings() is initialized so that
-    # environment variables are available for pydantic-settings
-    if KEYVAULT_AVAILABLE:
-        logger.info("Key Vault module is available, attempting to load secrets")
-        try:
-            secrets_loaded = load_secrets_from_keyvault()
-            if secrets_loaded:
-                logger.info("Successfully loaded secrets from Azure Key Vault")
-            else:
-                logger.info("Key Vault loading skipped (no AZURE_KEYVAULT_URL set)")
-        except Exception as e:
-            # Log error but don't crash - fall back to environment variables
-            logger.warning(f"Key Vault loading failed, falling back to environment variables: {e.__class__.__name__}")
-            logger.debug(f"Key Vault error details: {e}")
-    else:
-        logger.info("Key Vault module not available - using environment variables directly")
+    # Load configuration from environment variables
+    logger.info("Loading configuration from environment variables")
 
     settings = settings or Settings()
 

@@ -1,6 +1,5 @@
 """Test suite for Share API endpoints."""
 
-import pytest
 from databricks.sdk.service.sharing import UpdateSharePermissionsResponse
 from fastapi import status
 
@@ -12,14 +11,14 @@ class TestShareAuthenticationHeaders:
         """Test that requests without X-Workspace-URL header are rejected."""
         response = unauthenticated_client.get("/shares")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "X-Workspace-URL" in str(response.json())
 
     def test_missing_all_headers(self, unauthenticated_client):
         """Test that requests without required headers are rejected."""
         response = unauthenticated_client.get("/shares")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "X-Workspace-URL" in str(response.json())
 
 
@@ -226,7 +225,7 @@ class TestListShares:
         """Test listing shares with invalid page size."""
         response = client.get("/shares?page_size=0")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestDeleteShare:
@@ -305,7 +304,6 @@ class TestCreateShare:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Invalid share name" in response.json()["detail"]
 
-    @pytest.mark.skip(reason="TODO: Implement share name validation - currently returns 404 instead of 400")
     def test_create_share_invalid_name_with_special_chars(self, client):
         """Test creation with special characters in share name."""
         invalid_names = ["share/name", "share name", "share.name", "share@name"]

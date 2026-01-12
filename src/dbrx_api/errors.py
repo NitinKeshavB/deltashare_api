@@ -62,7 +62,7 @@ async def handle_pydantic_validation_errors(request: Request, exc: pydantic.Vali
     errors = exc.errors()
     logger.exception(exc)
     response = JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={
             "detail": [
                 {

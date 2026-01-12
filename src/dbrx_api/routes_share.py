@@ -188,7 +188,7 @@ async def delete_share_by_name(
 
 
 @ROUTER_SHARE.post(
-    "/shares/{share_name}",
+    "/shares/{share_name:path}",
     responses={
         status.HTTP_201_CREATED: {
             "description": "Shares created successfully",
@@ -291,11 +291,13 @@ async def add_data_objects_to_share(
     response: Response,
     objects_to_add: AddDataObjectsRequest = Body(
         ...,
-        example={
-            "tables": ["catalog.schema.table1", "catalog.schema.table2"],
-            "views": ["catalog.schema.view1"],
-            "schemas": ["catalog.schema"],
-        },
+        examples=[
+            {
+                "tables": ["catalog.schema.table1", "catalog.schema.table2"],
+                "views": ["catalog.schema.view1"],
+                "schemas": ["catalog.schema"],
+            }
+        ],
     ),
     workspace_url: str = Depends(get_workspace_url),
 ) -> ShareInfo:
@@ -388,11 +390,13 @@ async def revoke_data_objects_from_share(
     response: Response,
     objects_to_revoke: AddDataObjectsRequest = Body(
         ...,
-        example={
-            "tables": ["catalog.schema.table1", "catalog.schema.table2"],
-            "views": ["catalog.schema.view1"],
-            "schemas": ["catalog.schema"],
-        },
+        examples=[
+            {
+                "tables": ["catalog.schema.table1", "catalog.schema.table2"],
+                "views": ["catalog.schema.view1"],
+                "schemas": ["catalog.schema"],
+            }
+        ],
     ),
     workspace_url: str = Depends(get_workspace_url),
 ) -> ShareInfo:

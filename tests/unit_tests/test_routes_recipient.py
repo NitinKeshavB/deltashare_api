@@ -5,7 +5,6 @@ from datetime import (
     timezone,
 )
 
-import pytest
 from databricks.sdk.service.sharing import AuthenticationType
 from fastapi import status
 
@@ -17,14 +16,14 @@ class TestRecipientAuthenticationHeaders:
         """Test that requests without X-Workspace-URL header are rejected."""
         response = unauthenticated_client.get("/recipients")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "X-Workspace-URL" in str(response.json())
 
     def test_missing_all_headers(self, unauthenticated_client):
         """Test that requests without required headers are rejected."""
         response = unauthenticated_client.get("/recipients")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "X-Workspace-URL" in str(response.json())
 
 
@@ -95,7 +94,7 @@ class TestListRecipients:
         """Test listing recipients with invalid page size."""
         response = client.get("/recipients?page_size=0")
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestDeleteRecipient:
@@ -229,7 +228,6 @@ class TestCreateRecipientD2O:
 
         assert response.status_code == status.HTTP_201_CREATED
 
-    @pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
     def test_create_d2o_recipient_with_valid_ips(self, client, mock_recipient_business_logic):
         """Test creation with valid IP access list."""
         mock_recipient_business_logic["get"].return_value = None
@@ -244,7 +242,6 @@ class TestCreateRecipientD2O:
 
         assert response.status_code == status.HTTP_201_CREATED
 
-    @pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
     def test_create_d2o_recipient_with_invalid_ips(self, client, mock_recipient_business_logic):
         """Test creation with invalid IP addresses."""
         mock_recipient_business_logic["get"].return_value = None
@@ -307,7 +304,6 @@ class TestRotateRecipientToken:
         assert response.status_code == status.HTTP_200_OK
 
 
-@pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
 class TestAddClientIPToRecipient:
     """Tests for PUT /recipients/{recipient_name}/ipaddress/add endpoint."""
 
@@ -349,7 +345,7 @@ class TestAddClientIPToRecipient:
         response = client.put("/recipients/d2d_recipient/ipaddress/add?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "DATABRICKS authentication" in response.json()["detail"]
+        assert "DATABRICKS to DATABRICKS" in response.json()["detail"]
 
     def test_add_ip_invalid_format(self, client, mock_recipient_business_logic, mock_recipient_info):
         """Test adding invalid IP address."""
@@ -363,14 +359,17 @@ class TestAddClientIPToRecipient:
         assert "Invalid IP address" in response.json()["detail"]
 
 
-@pytest.mark.skip(reason="TODO: Fix route to use Query() for List[str] parameters")
 class TestRevokeClientIPFromRecipient:
     """Tests for PUT /recipients/{recipient_name}/ipaddress/revoke endpoint."""
 
     def test_revoke_ip_success(self, client, mock_recipient_business_logic, mock_recipient_info):
         """Test successful revocation of IP address."""
+        from databricks.sdk.service.sharing import IpAccessList
+
         mock_recipient_business_logic["get"].return_value = mock_recipient_info(
-            name="test_recipient", auth_type=AuthenticationType.TOKEN
+            name="test_recipient",
+            auth_type=AuthenticationType.TOKEN,
+            ip_access_list=IpAccessList(allowed_ip_addresses=["192.168.1.100"]),
         )
 
         response = client.put("/recipients/test_recipient/ipaddress/revoke?ip_access_list=192.168.1.100")
@@ -395,7 +394,7 @@ class TestRevokeClientIPFromRecipient:
         response = client.put("/recipients/d2d_recipient/ipaddress/revoke?ip_access_list=192.168.1.100")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "DATABRICKS authentication" in response.json()["detail"]
+        assert "DATABRICKS to DATABRICKS" in response.json()["detail"]
 
     def test_revoke_ip_invalid_format(self, client, mock_recipient_business_logic, mock_recipient_info):
         """Test revoking invalid IP address."""
@@ -433,7 +432,6 @@ class TestUpdateRecipientDescription:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    @pytest.mark.skip(reason="TODO: Fix permission check - implementation may not validate ownership")
     def test_update_description_permission_denied(self, client, mock_recipient_business_logic):
         """Test updating description without permission."""
         mock_recipient_business_logic["update_desc"].return_value = "User is not an owner of Recipient"
@@ -493,7 +491,6 @@ class TestUpdateRecipientExpiration:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "DATABRICKS" in response.json()["detail"]
 
-    @pytest.mark.skip(reason="TODO: Fix permission check - implementation may not validate ownership")
     def test_update_expiration_permission_denied(self, client, mock_recipient_business_logic, mock_recipient_info):
         """Test updating expiration without permission."""
         mock_recipient_business_logic["get"].return_value = mock_recipient_info(
