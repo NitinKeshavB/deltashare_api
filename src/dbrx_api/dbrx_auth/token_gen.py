@@ -114,9 +114,9 @@ def get_auth_token(exec_time_utc: datetime) -> Tuple[str, datetime]:
 
     """
     try:
-        # Check if cached token exists and is still valid
-        cached_token = os.environ.get("DATABRICKS_TOKEN")
-        cached_expiry = os.environ.get("TOKEN_EXPIRES_AT_UTC")
+        # Check if cached token exists and is still valid (try lowercase first, then uppercase for backward compatibility)
+        cached_token = os.environ.get("databricks_token") or os.environ.get("DATABRICKS_TOKEN")
+        cached_expiry = os.environ.get("token_expires_at_utc") or os.environ.get("TOKEN_EXPIRES_AT_UTC")
 
         if cached_token and cached_expiry:
             try:
@@ -138,16 +138,16 @@ def get_auth_token(exec_time_utc: datetime) -> Tuple[str, datetime]:
                 print("\n⚠ Cached token expires soon, generating new token...")
             except (ValueError, TypeError) as e:
                 print(f"\n⚠ Error parsing cached token, generating new: {e}")
-        # Read credentials from environment (loaded from Key Vault at startup or .env file)
-        client_id = os.getenv("CLIENT_ID")
-        client_secret = os.getenv("CLIENT_SECRET")
-        account_id = os.getenv("ACCOUNT_ID")
+        # Read credentials from environment (case-insensitive - try lowercase first, then uppercase for backward compatibility)
+        client_id = os.getenv("client_id") or os.getenv("CLIENT_ID")
+        client_secret = os.getenv("client_secret") or os.getenv("CLIENT_SECRET")
+        account_id = os.getenv("account_id") or os.getenv("ACCOUNT_ID")
 
         # Validate required environment variables
         if not all([client_id, client_secret, account_id]):
             raise CustomError(
-                "Missing required environment variables: CLIENT_ID, CLIENT_SECRET, or ACCOUNT_ID. "
-                "Ensure these are set in Azure Key Vault or .env file."
+                "Missing required environment variables: client_id, client_secret, or account_id. "
+                "Ensure these are set in Azure App Configuration as lowercase variables."
             )
 
         url = f"https://accounts.azuredatabricks.net/oidc/accounts/{account_id}/v1/token"
@@ -187,13 +187,13 @@ def get_auth_token(exec_time_utc: datetime) -> Tuple[str, datetime]:
         # Calculate expiration time in UTC
         expires_at_utc = created_at_utc + timedelta(seconds=token_expiry)
 
-        # Store token in environment variables (as string for persistence)
-        os.environ["DATABRICKS_TOKEN"] = access_token
-        os.environ["TOKEN_EXPIRES_AT_UTC"] = expires_at_utc.isoformat()
+        # Store token in environment variables (as string for persistence) - use lowercase
+        os.environ["databricks_token"] = access_token
+        os.environ["token_expires_at_utc"] = expires_at_utc.isoformat()
 
         # Persist to .env file for cross-process caching
-        _update_env_file("DATABRICKS_TOKEN", access_token)
-        _update_env_file("TOKEN_EXPIRES_AT_UTC", expires_at_utc.isoformat())
+        _update_env_file("databricks_token", access_token)
+        _update_env_file("token_expires_at_utc", expires_at_utc.isoformat())
 
         return access_token, expires_at_utc
 
